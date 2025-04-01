@@ -17,6 +17,7 @@ all: $(TARGET)
 # Link object files to create the executable
 $(TARGET): $(OBJ)
 	$(CC) $(OBJ) -o $(TARGET)
+	mv $(TARGET) ../$(TARGET)
 
 # Compile .c files into .o files
 %.o: %.c
@@ -24,7 +25,7 @@ $(TARGET): $(OBJ)
 
 # Clean up compiled files
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(OBJ) ../$(TARGET)
 
 # Rebuild everything
 rebuild: clean all

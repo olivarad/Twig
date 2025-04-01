@@ -24,7 +24,8 @@ int main(int argc, char *argv[])
 {
     checkOptions(argc, argv);
 
-    networkAddress = calculate_network_address(interface, networkAddress, debug);
+    networkAddress = calculateNetworkAddress(interface, networkAddress, debug);
+    trimInterface(interface, debug);
 
     int fd;
     do

@@ -78,7 +78,7 @@ void checkInterface(const char* interface)
     }
 }
 
-char* calculate_network_address(const char *address, char *networkAddress, int debug) 
+char* calculateNetworkAddress(const char *address, char *networkAddress, int debug) 
 {
     char ipStr[INET_ADDRSTRLEN];
     char cidrStr[3]; // CIDR is max 2 digits + null terminator
@@ -115,6 +115,19 @@ char* calculate_network_address(const char *address, char *networkAddress, int d
         fprintf(stdout, "Network address calculated as: %s\n", networkAddress);
     }
     return networkAddress;
+}
+
+void trimInterface(char* interface, int debug)
+{
+    char* underscorePosition = strchr(interface, '_');
+    if (underscorePosition != NULL)
+    {
+        *underscorePosition = '\0'; // Null-terminate at the underscore
+    }
+    if (debug == 1)
+    {
+        fprintf(stdout, "Interface trimmed to: %s\n", interface);
+    }
 }
 
 int readFileHeader(const int fd)

@@ -7,7 +7,9 @@ void printHelp();
 
 void checkInterface(const char* interface);
 
-char* calculate_network_address(const char *address, char* networkAddress, int debug);
+char* calculateNetworkAddress(const char *address, char* networkAddress, int debug);
+
+void trimInterface(char* interface, int debug);
 
 int readFileHeader(const int fd);
 

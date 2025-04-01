@@ -26,14 +26,27 @@ int main(int argc, char *argv[])
     do
     {
         fd = open(interface, O_RDONLY);
+        if (debug == 1)
+        {
+            fprintf(stdout, "open status: %d\n", fd);
+        }
     } while (fd == -1);
 
     int headerSuccess = 0;
     do
     {
-        fprintf(stdout, "Reading header\n");
+        if (debug == 1)
+        {
+            fprintf(stdout, "Reading header\n");
+        }
         headerSuccess = readHeader(fd);
     } while (headerSuccess == 0);
+
+    if (debug == 1)
+    {
+        fprintf(stdout, "Header read\n");
+    }
+
     while(1 == 1)
     {
         readPacket(fd);
@@ -52,8 +65,9 @@ void checkOptions(const int argc, char* argv[])
                 {
                     printUsage(argv[0]);
                 }
-                interface = MallocZ(sizeof(argv[i + 1] + 1)); // + 1 for null termination
+                interface = MallocZ(sizeof(argv[i + 1] + 4 + 1)); // + 4 for .dmp + 1 for null termination
                 strcpy(interface, argv[i + 1]);
+                strcat(interface, ".dmp");
                 ++i; // Skip assigned interface
             }
             else if (strcmp(argv[i], "-d") == 0) // enable debugging

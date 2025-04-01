@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <stdint.h> 
+#include <time.h>
 #include "utilities.h"
 
 #define PCAP_MAGIC         0xa1b2c3d4
@@ -15,6 +16,7 @@
 int debug = 0;
 
 char* interface = NULL;
+char* networkAddress = NULL;
 
 void checkOptions(const int argc, char* argv[]);
 
@@ -22,13 +24,19 @@ int main(int argc, char *argv[])
 {
     checkOptions(argc, argv);
 
+    networkAddress = calculate_network_address(interface, networkAddress, debug);
+
     int fd;
     do
     {
-        fd = open(interface, O_RDONLY);
+        fd = open(networkAddress, O_RDONLY);
         if (debug == 1)
         {
             fprintf(stdout, "open status: %d\n", fd);
+        }
+        if (fd == -1)
+        {
+            sleep(1);
         }
     } while (fd == -1);
 
@@ -37,19 +45,20 @@ int main(int argc, char *argv[])
     {
         if (debug == 1)
         {
-            fprintf(stdout, "Reading header\n");
+            fprintf(stdout, "Reading pcap file header\n");
         }
-        headerSuccess = readHeader(fd);
+        headerSuccess = readFileHeader(fd);
     } while (headerSuccess == 0);
 
     if (debug == 1)
     {
-        fprintf(stdout, "Header read\n");
+        fprintf(stdout, "Pcap file header read\n");
     }
 
     while(1 == 1)
     {
-        readPacket(fd);
+        readPacket(fd, debug);
+        sleep(1);
     }
 }
 
@@ -65,9 +74,8 @@ void checkOptions(const int argc, char* argv[])
                 {
                     printUsage(argv[0]);
                 }
-                interface = MallocZ(sizeof(argv[i + 1] + 4 + 1)); // + 4 for .dmp + 1 for null termination
+                interface = MallocZ(sizeof(argv[i + 1] + 1)); // + 1 for null termination
                 strcpy(interface, argv[i + 1]);
-                strcat(interface, ".dmp");
                 ++i; // Skip assigned interface
             }
             else if (strcmp(argv[i], "-d") == 0) // enable debugging

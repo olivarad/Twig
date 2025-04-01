@@ -7,8 +7,10 @@ void printHelp();
 
 void checkInterface(const char* interface);
 
-int readHeader(const int fd);
+char* calculate_network_address(const char *address, char* networkAddress, int debug);
 
-void readPacket(const int fd);
+int readFileHeader(const int fd);
+
+void readPacket(const int fd, int debug);
 
 void* MallocZ (int nbytes);

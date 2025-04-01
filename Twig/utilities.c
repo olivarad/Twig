@@ -78,7 +78,46 @@ void checkInterface(const char* interface)
     }
 }
 
-int readHeader(const int fd)
+char* calculate_network_address(const char *address, char *networkAddress, int debug) 
+{
+    char ipStr[INET_ADDRSTRLEN];
+    char cidrStr[3]; // CIDR is max 2 digits + null terminator
+    
+    // Extract IP address and CIDR prefix using underscore `_`
+    sscanf(address, "%[^_]_%s", ipStr, cidrStr);
+    
+    struct in_addr ipAddr, netmask, network;
+    int cidr = atoi(cidrStr); // Convert CIDR to integer for calculations
+
+    // Convert IP address from string to binary
+    if (inet_pton(AF_INET, ipStr, &ipAddr) != 1) 
+    {
+        fprintf(stderr, "Invalid IP address format.\n");
+        exit(1);
+    }
+
+    // Compute subnet mask from CIDR
+    uint32_t mask = (cidr == 0) ? 0 : htonl(~((1 << (32 - cidr)) - 1));
+    netmask.s_addr = mask;
+
+    // Compute network address (IP & Subnet Mask)
+    network.s_addr = ipAddr.s_addr & netmask.s_addr;
+
+    // Convert network address back to string
+    char netIP[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &network, netIP, INET_ADDRSTRLEN);
+
+    // Write the final result into networkAddress
+    networkAddress = MallocZ(INET_ADDRSTRLEN + 4);
+    sprintf(networkAddress, "%s_%s.dmp", netIP, cidrStr);
+    if (debug == 1)
+    {
+        fprintf(stdout, "Network address calculated as: %s\n", networkAddress);
+    }
+    return networkAddress;
+}
+
+int readFileHeader(const int fd)
 {
     struct pcap_file_header pfh;
     unsigned bytesRead = read(fd, &pfh, sizeof(pfh));
@@ -100,7 +139,7 @@ int readHeader(const int fd)
     return 1;
 }
 
-void readPacket(const int fd)
+void readPacket(const int fd, int debug)
 {
     struct pcap_pkthdr pktHeader;
     int bytesRead = read(fd, &pktHeader, sizeof(pktHeader));
@@ -115,6 +154,11 @@ void readPacket(const int fd)
         exit(1);
     }
     
+    if (debug == 1)
+    {
+        fprintf(stdout, "Packet header read: %u bytes\n", bytesRead);
+    }
+
     char* packetBuffer = MallocZ(pktHeader.caplen);
     bytesRead = read(fd, packetBuffer, pktHeader.caplen);
     if (bytesRead != pktHeader.caplen)
@@ -122,6 +166,12 @@ void readPacket(const int fd)
         fflush(stdout);
         fprintf(stdout, "Truncated packet: only %u bytes read\n", bytesRead);
         exit(1);
+    }
+
+    struct eth_hdr* eth = (struct eth_hdr*) packetBuffer; // For ARP
+    if (debug == 1)
+    {
+        fprintf(stdout, "Ethernet header found, type: %u\n", eth->type);
     }
 
     struct ipv4_header* iph = (struct ipv4_header*) (packetBuffer + sizeof(struct eth_hdr));

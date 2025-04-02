@@ -51,6 +51,10 @@ struct ipv4_header
 	uint32_t destinationIP;
 };
 
+uint32_t netAddress;
+uint32_t broadcastAddress;
+uint8_t subnetLength;
+
 void printUsage(const char* program)
 {
     fflush(stdout);
@@ -78,6 +82,16 @@ void checkInterface(const char* interface)
     }
 }
 
+static void calculateBroadcastAddress(int debug)
+{
+    uint32_t host_bits = (1 << (32 - subnetLength)) - 1;
+    broadcastAddress = netAddress | htonl(host_bits);
+    if (debug == 1)
+    {
+        fprintf(stdout, "Broadcast address calculated as %s\n", inet_ntoa(*(struct in_addr *)&broadcastAddress));
+    }
+}
+
 char* calculateNetworkAddress(const char *address, char *networkAddress, int debug) 
 {
     char ipStr[INET_ADDRSTRLEN];
@@ -87,7 +101,7 @@ char* calculateNetworkAddress(const char *address, char *networkAddress, int deb
     sscanf(address, "%[^_]_%s", ipStr, cidrStr);
     
     struct in_addr ipAddr, netmask, network;
-    int cidr = atoi(cidrStr); // Convert CIDR to integer for calculations
+    subnetLength = atoi(cidrStr); // Convert CIDR to integer for calculations
 
     // Convert IP address from string to binary
     if (inet_pton(AF_INET, ipStr, &ipAddr) != 1) 
@@ -95,9 +109,11 @@ char* calculateNetworkAddress(const char *address, char *networkAddress, int deb
         fprintf(stderr, "Invalid IP address format.\n");
         exit(1);
     }
+    netAddress = ipAddr.s_addr;
+    calculateBroadcastAddress(debug);
 
     // Compute subnet mask from CIDR
-    uint32_t mask = (cidr == 0) ? 0 : htonl(~((1 << (32 - cidr)) - 1));
+    uint32_t mask = (subnetLength == 0) ? 0 : htonl(~((1 << (32 - subnetLength)) - 1));
     netmask.s_addr = mask;
 
     // Compute network address (IP & Subnet Mask)
@@ -130,6 +146,8 @@ void trimInterface(char* interface, int debug)
     }
 }
 
+
+
 int readFileHeader(const int fd)
 {
     struct pcap_file_header pfh;
@@ -152,7 +170,7 @@ int readFileHeader(const int fd)
     return 1;
 }
 
-void readPacket(const int fd, int debug)
+void readPacket(const int fd, int debug, char* interface)
 {
     struct pcap_pkthdr pktHeader;
     int bytesRead = read(fd, &pktHeader, sizeof(pktHeader));
@@ -188,21 +206,32 @@ void readPacket(const int fd, int debug)
     }
 
     struct ipv4_header* iph = (struct ipv4_header*) (packetBuffer + sizeof(struct eth_hdr));
-
-    switch (iph->protocol)
+    
+    char destinationBuffer[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &iph->destinationIP, destinationBuffer, INET_ADDRSTRLEN);
+    
+    if (strcmp(destinationBuffer, interface) == 0 || iph->destinationIP == broadcastAddress)
     {
-        case IPPROTO_ICMP:
-            fprintf(stdout, "Protocol: ICMP\n");
-            break;
-        case IPPROTO_UDP:
-            fprintf(stdout, "Protocol: UDP\n");
-            break;
-        case IPPROTO_TCP:
-            fprintf(stdout, "Protoco: TCP\n");
-            break;
-        default:
-            fprintf(stdout, "Protocol: Unknown (%d)\n", iph->protocol);
-            break;
+        if (debug == 1)
+        {
+            fprintf(stdout, "Packet found for me\n");
+        }
+
+        switch (iph->protocol)
+        {
+            case IPPROTO_ICMP:
+                fprintf(stdout, "Protocol: ICMP\n");
+                break;
+            case IPPROTO_UDP:
+                fprintf(stdout, "Protocol: UDP\n");
+                break;
+            case IPPROTO_TCP:
+                fprintf(stdout, "Protoco: TCP\n");
+                break;
+            default:
+                fprintf(stdout, "Protocol: Unknown (%d)\n", iph->protocol);
+                break;
+        }
     }
 
     free(packetBuffer);

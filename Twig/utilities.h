@@ -13,6 +13,6 @@ void trimInterface(char* interface, int debug);
 
 int readFileHeader(const int fd);
 
-void readPacket(const int fd, int debug);
+void readPacket(const int fd, int debug, char* interface);
 
 void* MallocZ (int nbytes);

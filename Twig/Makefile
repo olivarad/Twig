@@ -5,7 +5,7 @@ CC = gcc
 CFLAGS = -Wall -Werror -std=c11 -g
 
 # Source files
-SRC = twig.c utilities.c
+SRC = twig.c utilities.c arp.c
 OBJ = $(SRC:.c=.o)
 
 # Output executable

@@ -1,4 +1,5 @@
 #include "utilities.h"
+#include "arp.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -210,6 +211,8 @@ void readPacket(const int fd, int debug, char* interface)
     char destinationBuffer[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &iph->destinationIP, destinationBuffer, INET_ADDRSTRLEN);
     
+    addArpEntry(iph->sourceIP, eth->sourceMACAddress);
+
     if (strcmp(destinationBuffer, interface) == 0 || iph->destinationIP == broadcastAddress)
     {
         if (debug == 1)

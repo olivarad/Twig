@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/if_ether.h>
+#include <net/ethernet.h> 
 #include <string.h>
 #include <stdint.h> 
 
@@ -36,7 +38,7 @@ struct eth_hdr
 	u_int8_t destinationMACAddress[6];
 	u_int8_t sourceMACAddress[6];
 	u_int16_t type;
- };
+};
 
 struct ipv4_header
 {
@@ -44,12 +46,64 @@ struct ipv4_header
 	uint8_t typeOfService;
 	uint16_t totalLength;
 	uint16_t identification;
-	uint16_t flagsAndFragmentFragmentOffset; // 1 bit reserved, 1 bit don't fragment, 1 bit more frgament, 13 bit fragment offset
+	uint16_t flagsAndFragmentOffset; // 1 bit reserved, 1 bit don't fragment, 1 bit more frgament, 13 bit fragment offset
 	uint8_t timeToLive;
 	uint8_t protocol;
 	uint16_t headerChecksum;
 	uint32_t sourceIP;
 	uint32_t destinationIP;
+};
+
+struct arp_header
+{
+	uint16_t htype;
+    uint16_t ptype;
+    uint8_t hlen;
+    uint8_t plen;
+    uint16_t opcode;
+    uint8_t sender_mac[6];
+    uint8_t sender_ip[4];
+    uint8_t target_mac[6];
+    uint8_t target_ip[4];
+};
+
+struct tcp_header
+{
+	uint16_t sourcePort;
+	uint16_t destinationPort;
+	uint32_t sequence;
+	uint32_t ack;
+	uint8_t dataOffset;
+	uint8_t flags;
+	uint16_t window;
+	uint16_t checksum;
+	uint16_t urgentPointer;
+};
+
+struct udp_header
+{
+	uint16_t sourcePort;
+	uint16_t destinationPort;
+	uint16_t length;
+	uint16_t checksum;
+};
+
+struct udp_pseudo_header
+{
+    uint32_t source_ip;
+    uint32_t dest_ip;
+    uint8_t reserved;
+    uint8_t protocol;
+    uint16_t udp_length;
+};
+
+struct icmp_header
+{
+    uint8_t type;
+    uint8_t code;
+    uint16_t checkSum;
+    uint16_t identifier;
+    uint16_t sequenceNumber;
 };
 
 uint32_t netAddress;
@@ -84,10 +138,10 @@ void checkInterface(const char* interface)
 }
 
 // Pass in ethernet after reading from wire
-static void ethernetNetworkToHost(struct eth_hdr* header)
+/*static void ethernetNetworkToHost(struct eth_hdr* header)
 {
     header->type = ntohs(header->type);
-}
+}*/
 
 // Pass in ethernet before writing to wire
 /*static void ethernetHostToNetwork(struct eth_hdr* header)
@@ -96,10 +150,10 @@ static void ethernetNetworkToHost(struct eth_hdr* header)
 }*/
 
 // Pass in checksum after reading from wire
-static void checksumNetworkToHost(struct ipv4_header* header)
+/*static void checksumNetworkToHost(struct ipv4_header* header)
 {
     header->headerChecksum = ntohs(header->headerChecksum);
-}
+}*/
 
 // Pass in checksum before writing to wire (after changing ipv4 from host to network order)
 /*static void checsumHostToNetwork(struct ipv4_header* header)
@@ -108,19 +162,19 @@ static void checksumNetworkToHost(struct ipv4_header* header)
 }*/
 
 // Pass in ipv4 after reading from wire (only after verifying checksum)
-static void ipv4NetworkToHost(struct ipv4_header* header) 
+/*static void ipv4NetworkToHost(struct ipv4_header* header) 
 {
     header->totalLength = ntohs(header->totalLength);
     header->identification = ntohs(header->identification);
-    header->flagsAndFragmentFragmentOffset = ntohs(header->flagsAndFragmentFragmentOffset);
-}
+    header->flagsAndFragmentOffset = ntohs(header->flagsAndFragmentOffset);
+}*/
 
 // Pass in ipv4 before writing to wire (before calculating checksum)
 /*static void ipv4HostToNetwork(struct ipv4_header* header)
 {
     header->totalLength = htons(header->totalLength);
     header->identification = htons(header->identification);
-    header->flagsAndFragmentFragmentOffset = htons(header->flagsAndFragmentFragmentOffset);
+    header->flagsAndFragmentOffset = htons(header->flagsAndFragmentOffset);
 }*/
 
 
@@ -130,11 +184,11 @@ static void printIPv4Header(const struct ipv4_header* header)
     fprintf(stdout, "Version: %u\n", header->versionAndHeaderLength >> 4);
     fprintf(stdout, "Header Length: %u bytes\n", (header->versionAndHeaderLength & 0x0F) * 4);
     fprintf(stdout, "Type of Service: 0x%02X\n", header->typeOfService);
-    fprintf(stdout, "Total Length: %u\n", header->totalLength);
-    fprintf(stdout, "Identification: %u\n", header->identification);
-    fprintf(stdout, "Frag Offset: %u\n", (header->flagsAndFragmentFragmentOffset & 0x1FFF) * 8);
-    fprintf(stdout, "Frag DF: %s\n", (header->flagsAndFragmentFragmentOffset & 0x4000) >> 14 ? "yes" : "no");
-    fprintf(stdout, "Frag MF: %s\n", (header->flagsAndFragmentFragmentOffset & 0x2000) >> 13 ? "yes" : "no");    
+    fprintf(stdout, "Total Length: %u\n", ntohs(header->totalLength));
+    fprintf(stdout, "Identification: %u\n", ntohs(header->identification));
+    fprintf(stdout, "Frag Offset: %u\n", (ntohs(header->flagsAndFragmentOffset) & 0x1FFF) * 8);
+    fprintf(stdout, "Frag DF: %s\n", (ntohs(header->flagsAndFragmentOffset) & 0x4000) >> 14 ? "yes" : "no");
+    fprintf(stdout, "Frag MF: %s\n", (ntohs(header->flagsAndFragmentOffset) & 0x2000) >> 13 ? "yes" : "no");    
     fprintf(stdout, "Time to Live: %u\n", header->timeToLive);
     fprintf(stdout, "Protocol: %u\n", header->protocol);
     fprintf(stdout, "Header Checksum: 0x%04X\n", header->headerChecksum);
@@ -184,7 +238,7 @@ static uint16_t calculateChecksum(const struct ipv4_header* header)
 static int verifyChecksum(const struct ipv4_header* header, int debug) 
 {
     // Save the original checksum value
-    uint16_t original_checksum = header->headerChecksum;
+    uint16_t original_checksum = ntohs(header->headerChecksum);
 
     // Set the checksum field to 0 to compute the checksum
     ((struct ipv4_header*)header)->headerChecksum = 0;
@@ -202,6 +256,60 @@ static int verifyChecksum(const struct ipv4_header* header, int debug)
     // Verify if the computed checksum matches the header checksum
     return (computed_checksum == original_checksum);
 }
+
+static uint16_t calculate_udp_checksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload) 
+{
+
+    struct udp_pseudo_header pseudo_hdr;
+    pseudo_hdr.source_ip = ip->sourceIP;
+    pseudo_hdr.dest_ip = ip->destinationIP;
+    pseudo_hdr.reserved = 0;
+    pseudo_hdr.protocol = IPPROTO_UDP;
+    pseudo_hdr.udp_length = udp->length;
+    
+    uint32_t checksum = 0;
+    
+    // Add pseudo-header
+    uint16_t *ptr = (uint16_t *)&pseudo_hdr;
+    for (size_t i = 0; i < sizeof(pseudo_hdr) / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    // Add UDP header
+    ptr = (uint16_t *)udp;
+    for (size_t i = 0; i < sizeof(struct udp_header) / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    // Add payload
+    ptr = (uint16_t *)payload;
+    size_t payload_length = udp->length - sizeof(struct udp_header);
+    for (size_t i = 0; i < payload_length / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    if (payload_length % 2) 
+    {
+        checksum += payload[payload_length - 1] << 8;
+    }
+    
+    // Handle overflow
+    while (checksum >> 16) 
+    {
+        checksum = (checksum & 0xFFFF) + (checksum >> 16);
+    }
+    
+    return htonl((uint16_t)~checksum);
+}
+
+static int verify_udp_checksum(struct udp_header *udp, struct ipv4_header *ip, const uint8_t *payload) 
+{
+    return calculate_udp_checksum(udp, ip, payload) == 0;
+}
+
 
 static void calculateBroadcastAddress(int debug)
 {
@@ -315,58 +423,82 @@ void readPacket(const int fd, char* interface, int debug)
     }
 
     struct eth_hdr* eth = (struct eth_hdr*) packetBuffer; // For ARP
-    ethernetNetworkToHost(eth);
     if (debug == 1)
     {
-        fprintf(stdout, "Ethernet header found, type: 0x%04x\n", eth->type);
+        fprintf(stdout, "Ethernet header found, type: 0x%04x\n", ntohs(eth->type));
     }
 
-    struct ipv4_header* iph = (struct ipv4_header*) (packetBuffer + sizeof(struct eth_hdr));
-    
-    checksumNetworkToHost(iph);
-    if (verifyChecksum(iph, debug) == 0)
+    if (ntohs(eth->type) == ETHERTYPE_ARP)
     {
-        if (debug == 1)
-        {
-            fflush(stdout);
-            fprintf(stderr, "Header checksum invalid, rejecting packet\n");
-        }
-        return;
+        fprintf(stdout, "Ethernet protocol: ARP\n");
     }
-
-    ipv4NetworkToHost(iph);
-
-    if (debug == 1)
+    else if (ntohs(eth->type) == ETHERTYPE_IP)
     {
-        printIPv4Header(iph);
-    } 
-    
-    char destinationBuffer[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &iph->destinationIP, destinationBuffer, INET_ADDRSTRLEN);
-    
-    addArpEntry(iph->sourceIP, eth->sourceMACAddress);
+        fprintf(stdout, "Ethernet protocol: IP\n");
 
-    if (strcmp(destinationBuffer, interface) == 0 || iph->destinationIP == broadcastAddress)
-    {
-        if (debug == 1)
+        struct ipv4_header* iph = (struct ipv4_header*) (packetBuffer + sizeof(struct eth_hdr));
+    
+        if (verifyChecksum(iph, debug) == 0)
         {
-            fprintf(stdout, "Packet found for me\n");
+            if (debug == 1)
+            {
+                fflush(stdout);
+                fprintf(stderr, "Header checksum invalid, rejecting packet\n");
+            }
+            return;
         }
 
-        switch (iph->protocol)
+        addArpEntry(iph->sourceIP, eth->sourceMACAddress);
+
+        if (debug == 1)
         {
-            case IPPROTO_ICMP:
-                fprintf(stdout, "Protocol: ICMP\n");
-                break;
-            case IPPROTO_UDP:
-                fprintf(stdout, "Protocol: UDP\n");
-                break;
-            case IPPROTO_TCP:
-                fprintf(stdout, "Protoco: TCP\n");
-                break;
-            default:
-                fprintf(stdout, "Protocol: Unknown (%d)\n", iph->protocol);
-                break;
+            printIPv4Header(iph);
+        } 
+        
+        char destination[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &iph->destinationIP, destination, INET_ADDRSTRLEN);
+
+        if (strcmp(destination, interface) == 0 || iph->destinationIP == broadcastAddress)
+        {
+            if (debug == 1)
+            {
+                fprintf(stdout, "Packet found for me\n");
+            }
+
+            switch (iph->protocol)
+            {
+                case IPPROTO_ICMP:
+                    fprintf(stdout, "IP protocol: ICMP\n");
+                    //struct icmp_header* icmpHeader = (struct icmp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    break;
+                case IPPROTO_UDP:
+                    fprintf(stdout, "IP protocol: UDP\n");
+                    struct udp_header* udpHeader = (struct udp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    uint8_t* udpPayload = (uint8_t*)(udpHeader + 1);
+
+                    if (verify_udp_checksum(udpHeader, iph, udpPayload))
+                    {
+                        if (debug == 1)
+                        {
+                            fprintf(stdout, "UDP checksum verified, packet accepted\n");
+                        }
+                    }
+                    else
+                    {
+                        if (debug == 1)
+                        {
+                            fprintf(stdout, "UDP checksum rejected, packet rejected\n");
+                        }
+                    }
+                    break;
+                case IPPROTO_TCP:
+                    fprintf(stdout, "IP protocol: TCP\n");
+                    //struct tcp_header* tcpHeader = (struct tcp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    break;
+                default:
+                    fprintf(stdout, "IP protocol: Unknown (%d)\n", iph->protocol);
+                    break;
+            }
         }
     }
 

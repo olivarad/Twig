@@ -266,7 +266,7 @@ static int verifyChecksum(const struct ipv4_header* header, int debug)
     return (computed_checksum == original_checksum);
 }
 
-static uint16_t calculate_udp_checksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload) 
+static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload) 
 {
 
     struct udp_pseudo_header pseudo_hdr;
@@ -314,12 +314,12 @@ static uint16_t calculate_udp_checksum(struct udp_header* udp, struct ipv4_heade
     return htonl((uint16_t)~checksum);
 }
 
-static int verify_udp_checksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload) 
+static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload) 
 {
-    return calculate_udp_checksum(udp, ip, payload) == 0;
+    return calculateUDPChecksum(udp, ip, payload) == 0;
 }
 
-static uint16_t calculate_tcp_checksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload) 
+static uint16_t calculateTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload) 
 {
 
     struct tcp_pseudo_header pseudo_hdr;
@@ -367,9 +367,56 @@ static uint16_t calculate_tcp_checksum(struct tcp_header* tcp, struct ipv4_heade
     return htonl((uint16_t)~checksum);
 }
 
-static int verify_tcp_checksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload) 
+static int verifyTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload) 
 {
-    return calculate_tcp_checksum(tcp, ip, payload) == 0;
+    return calculateTCPChecksum(tcp, ip, payload) == 0;
+}
+
+static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length) 
+{
+    uint32_t checksum = 0;
+    
+    // Add ICMP header
+    uint16_t *ptr = (uint16_t *)icmp;
+    for (size_t i = 0; i < sizeof(struct icmp_header) / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    // Add payload
+    ptr = (uint16_t *)payload;
+    for (size_t i = 0; i < payload_length / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    if (payload_length % 2) 
+    {
+        checksum += payload[payload_length - 1] << 8;
+    }
+    
+    // Handle overflow
+    while (checksum >> 16) 
+    {
+        checksum = (checksum & 0xFFFF) + (checksum >> 16);
+    }
+    
+    return htonl((uint16_t)~checksum);
+}
+
+static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length) 
+{
+    uint16_t original_checksum = icmp->checkSum;
+    icmp->checkSum = 0; // Set to zero for correct calculation
+
+    // Compute the checksum over the ICMP header and payload
+    uint16_t computed_checksum = calculateICMPChecksum(icmp, payload, payload_length);
+
+    // Restore the original checksum
+    icmp->checkSum = original_checksum;
+
+    // Check if the calculated checksum matches the original
+    return (computed_checksum == 0);
 }
 
 static void calculateBroadcastAddress(int debug)
@@ -530,14 +577,33 @@ void readPacket(const int fd, char* interface, int debug)
             {
                 case IPPROTO_ICMP:
                     fprintf(stdout, "IP protocol: ICMP\n");
-                    //struct icmp_header* icmpHeader = (struct icmp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    struct icmp_header* icmpHeader = (struct icmp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    size_t icmp_payload_length = iph->totalLength - (sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4) + sizeof(struct icmp_header));
+                    uint8_t* icmp_payload = (uint8_t*)(icmpHeader + 1); // Payload starts after the ICMP header
+
+                    if (verifyICMPChecksum(icmpHeader, icmp_payload, icmp_payload_length))
+                    {
+                        if (debug == 1)
+                        {
+                            fprintf(stdout, "ICMP checksum verified, packet accepted\n");
+                        }
+                    }
+                    else
+                    {
+                        if (debug == 1)
+                        {
+                            fprintf(stdout, "ICMP checksum rejected, packet rejected\n");
+                        }
+                    }
+
+                    
                     break;
                 case IPPROTO_UDP:
                     fprintf(stdout, "IP protocol: UDP\n");
                     struct udp_header* udpHeader = (struct udp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint8_t* udpPayload = (uint8_t*)(udpHeader + 1);
 
-                    if (verify_udp_checksum(udpHeader, iph, udpPayload))
+                    if (verifyUDPChecksum(udpHeader, iph, udpPayload))
                     {
                         if (debug == 1)
                         {
@@ -557,7 +623,7 @@ void readPacket(const int fd, char* interface, int debug)
                     struct tcp_header* tcpHeader = (struct tcp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint8_t* tcpPayload = (uint8_t*)(tcpHeader + 1);
 
-                    if (verify_tcp_checksum(tcpHeader, iph, tcpPayload))
+                    if (verifyTCPChecksum(tcpHeader, iph, tcpPayload))
                     {
                         if (debug == 1)
                         {

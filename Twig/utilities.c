@@ -80,6 +80,15 @@ struct tcp_header
 	uint16_t urgentPointer;
 };
 
+struct tcp_pseudo_header
+{
+    uint32_t source_ip;
+    uint32_t dest_ip;
+    uint8_t reserved;
+    uint8_t protocol;
+    uint16_t tcp_length;
+};
+
 struct udp_header
 {
 	uint16_t sourcePort;
@@ -305,11 +314,63 @@ static uint16_t calculate_udp_checksum(struct udp_header* udp, struct ipv4_heade
     return htonl((uint16_t)~checksum);
 }
 
-static int verify_udp_checksum(struct udp_header *udp, struct ipv4_header *ip, const uint8_t *payload) 
+static int verify_udp_checksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload) 
 {
     return calculate_udp_checksum(udp, ip, payload) == 0;
 }
 
+static uint16_t calculate_tcp_checksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload) 
+{
+
+    struct tcp_pseudo_header pseudo_hdr;
+    pseudo_hdr.source_ip = ip->sourceIP;
+    pseudo_hdr.dest_ip = ip->destinationIP;
+    pseudo_hdr.reserved = 0;
+    pseudo_hdr.protocol = IPPROTO_TCP;
+    pseudo_hdr.tcp_length = ip->totalLength - ((ip->versionAndHeaderLength & 0x0F) * 4);
+    
+    uint32_t checksum = 0;
+    
+    // Add pseudo-header
+    uint16_t *ptr = (uint16_t *)&pseudo_hdr;
+    for (size_t i = 0; i < sizeof(pseudo_hdr) / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    // Add TCP header
+    ptr = (uint16_t *)tcp;
+    for (size_t i = 0; i < sizeof(struct tcp_header) / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    // Add payload
+    ptr = (uint16_t *)payload;
+    size_t payload_length = pseudo_hdr.tcp_length - ((tcp->dataOffset >> 4) * 4);
+    for (size_t i = 0; i < payload_length / 2; i++) 
+    {
+        checksum += ntohs(ptr[i]);
+    }
+    
+    if (payload_length % 2) 
+    {
+        checksum += payload[payload_length - 1] << 8;
+    }
+    
+    // Handle overflow
+    while (checksum >> 16) 
+    {
+        checksum = (checksum & 0xFFFF) + (checksum >> 16);
+    }
+    
+    return htonl((uint16_t)~checksum);
+}
+
+static int verify_tcp_checksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload) 
+{
+    return calculate_tcp_checksum(tcp, ip, payload) == 0;
+}
 
 static void calculateBroadcastAddress(int debug)
 {
@@ -493,7 +554,23 @@ void readPacket(const int fd, char* interface, int debug)
                     break;
                 case IPPROTO_TCP:
                     fprintf(stdout, "IP protocol: TCP\n");
-                    //struct tcp_header* tcpHeader = (struct tcp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    struct tcp_header* tcpHeader = (struct tcp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                    uint8_t* tcpPayload = (uint8_t*)(tcpHeader + 1);
+
+                    if (verify_tcp_checksum(tcpHeader, iph, tcpPayload))
+                    {
+                        if (debug == 1)
+                        {
+                            fprintf(stdout, "TCP checksum verified, packet accepted\n");
+                        }
+                    }
+                    else
+                    {
+                        if (debug == 1)
+                        {
+                            fprintf(stdout, "TCP checksum rejected, packet rejected\n");
+                        }
+                    }
                     break;
                 default:
                     fprintf(stdout, "IP protocol: Unknown (%d)\n", iph->protocol);

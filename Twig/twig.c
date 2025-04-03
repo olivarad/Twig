@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
 
     while(1 == 1)
     {
-        readPacket(fd, debug, interface);
+        readPacket(fd, interface, debug);
         sleep(1);
     }
 }

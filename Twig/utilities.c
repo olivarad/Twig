@@ -83,6 +83,126 @@ void checkInterface(const char* interface)
     }
 }
 
+// Pass in ethernet after reading from wire
+static void ethernetNetworkToHost(struct eth_hdr* header)
+{
+    header->type = ntohs(header->type);
+}
+
+// Pass in ethernet before writing to wire
+/*static void ethernetHostToNetwork(struct eth_hdr* header)
+{
+    header->type = htons(header->type);
+}*/
+
+// Pass in checksum after reading from wire
+static void checksumNetworkToHost(struct ipv4_header* header)
+{
+    header->headerChecksum = ntohs(header->headerChecksum);
+}
+
+// Pass in checksum before writing to wire (after changing ipv4 from host to network order)
+/*static void checsumHostToNetwork(struct ipv4_header* header)
+{
+    header->headerChecksum = htons(header->headerChecksum);
+}*/
+
+// Pass in ipv4 after reading from wire (only after verifying checksum)
+static void ipv4NetworkToHost(struct ipv4_header* header) 
+{
+    header->totalLength = ntohs(header->totalLength);
+    header->identification = ntohs(header->identification);
+    header->flagsAndFragmentFragmentOffset = ntohs(header->flagsAndFragmentFragmentOffset);
+}
+
+// Pass in ipv4 before writing to wire (before calculating checksum)
+/*static void ipv4HostToNetwork(struct ipv4_header* header)
+{
+    header->totalLength = htons(header->totalLength);
+    header->identification = htons(header->identification);
+    header->flagsAndFragmentFragmentOffset = htons(header->flagsAndFragmentFragmentOffset);
+}*/
+
+
+static void printIPv4Header(const struct ipv4_header* header) 
+{
+    fprintf(stdout, "IPv4 Header:\n");
+    fprintf(stdout, "Version: %u\n", header->versionAndHeaderLength >> 4);
+    fprintf(stdout, "Header Length: %u bytes\n", (header->versionAndHeaderLength & 0x0F) * 4);
+    fprintf(stdout, "Type of Service: 0x%02X\n", header->typeOfService);
+    fprintf(stdout, "Total Length: %u\n", header->totalLength);
+    fprintf(stdout, "Identification: %u\n", header->identification);
+    fprintf(stdout, "Frag Offset: %u\n", (header->flagsAndFragmentFragmentOffset & 0x1FFF) * 8);
+    fprintf(stdout, "Frag DF: %s\n", (header->flagsAndFragmentFragmentOffset & 0x4000) >> 14 ? "yes" : "no");
+    fprintf(stdout, "Frag MF: %s\n", (header->flagsAndFragmentFragmentOffset & 0x2000) >> 13 ? "yes" : "no");    
+    fprintf(stdout, "Time to Live: %u\n", header->timeToLive);
+    fprintf(stdout, "Protocol: %u\n", header->protocol);
+    fprintf(stdout, "Header Checksum: 0x%04X\n", header->headerChecksum);
+    struct in_addr src, dst;
+    src.s_addr = header->sourceIP;
+    dst.s_addr = header->destinationIP;
+    fprintf(stdout, "Source IP: %s\n", inet_ntoa(src));
+    fprintf(stdout, "Destination IP: %s\n", inet_ntoa(dst));
+}
+
+static uint16_t calculateChecksum(const struct ipv4_header* header) 
+{
+    uint32_t checksum = 0;
+    const uint8_t* byte_ptr = (const uint8_t*)header;
+    
+    // Process each 16-bit chunk in the IP header
+    for (size_t i = 0; i < sizeof(struct ipv4_header); i += 2) 
+    {
+        uint16_t word;
+        
+        // Read two bytes at a time (16 bits), ensuring proper byte order
+        if (i + 1 < sizeof(struct ipv4_header)) 
+        {
+            word = (byte_ptr[i] << 8) | byte_ptr[i + 1];
+        } else 
+        {
+            // If there's an odd number of bytes, take the last byte and zero the second byte
+            word = byte_ptr[i] << 8;
+        }
+
+        // Add to the checksum
+        checksum += word;
+
+        // If there is an overflow, wrap it around (16-bit overflow handling)
+        while (checksum > 0xFFFF) 
+        {
+            checksum = (checksum & 0xFFFF) + (checksum >> 16);
+        }
+    }
+
+    // One's complement of the checksum
+    checksum = ~checksum & 0xFFFF;
+
+    return (uint16_t)checksum;
+}
+
+static int verifyChecksum(const struct ipv4_header* header, int debug) 
+{
+    // Save the original checksum value
+    uint16_t original_checksum = header->headerChecksum;
+
+    // Set the checksum field to 0 to compute the checksum
+    ((struct ipv4_header*)header)->headerChecksum = 0;
+
+    // Compute the checksum
+    uint16_t computed_checksum = calculateChecksum(header);
+    if (debug == 1)
+    {
+        fprintf(stdout, "Calculated Header Checksum: 0x%04X\n", computed_checksum);
+    }
+
+    // Restore the original checksum
+    ((struct ipv4_header*)header)->headerChecksum = original_checksum;
+
+    // Verify if the computed checksum matches the header checksum
+    return (computed_checksum == original_checksum);
+}
+
 static void calculateBroadcastAddress(int debug)
 {
     uint32_t host_bits = (1 << (32 - subnetLength)) - 1;
@@ -93,7 +213,7 @@ static void calculateBroadcastAddress(int debug)
     }
 }
 
-char* calculateNetworkAddress(const char *address, char *networkAddress, int debug) 
+char* calculateNetworkAddress(const char* address, char* networkAddress, int debug) 
 {
     char ipStr[INET_ADDRSTRLEN];
     char cidrStr[3]; // CIDR is max 2 digits + null terminator
@@ -147,18 +267,12 @@ void trimInterface(char* interface, int debug)
     }
 }
 
-
-
 int readFileHeader(const int fd)
 {
     struct pcap_file_header pfh;
     unsigned bytesRead = read(fd, &pfh, sizeof(pfh));
     if (bytesRead != sizeof(pfh))
     {
-        /*fflush(stdout);
-        fprintf(stderr, "Truncated pcap header: only %u bytes read\n", bytesRead);
-        close(fd);
-        exit(1);*/
         return 0;
     }
 
@@ -171,7 +285,7 @@ int readFileHeader(const int fd)
     return 1;
 }
 
-void readPacket(const int fd, int debug, char* interface)
+void readPacket(const int fd, char* interface, int debug)
 {
     struct pcap_pkthdr pktHeader;
     int bytesRead = read(fd, &pktHeader, sizeof(pktHeader));
@@ -201,12 +315,31 @@ void readPacket(const int fd, int debug, char* interface)
     }
 
     struct eth_hdr* eth = (struct eth_hdr*) packetBuffer; // For ARP
+    ethernetNetworkToHost(eth);
     if (debug == 1)
     {
-        fprintf(stdout, "Ethernet header found, type: %u\n", eth->type);
+        fprintf(stdout, "Ethernet header found, type: 0x%04x\n", eth->type);
     }
 
     struct ipv4_header* iph = (struct ipv4_header*) (packetBuffer + sizeof(struct eth_hdr));
+    
+    checksumNetworkToHost(iph);
+    if (verifyChecksum(iph, debug) == 0)
+    {
+        if (debug == 1)
+        {
+            fflush(stdout);
+            fprintf(stderr, "Header checksum invalid, rejecting packet\n");
+        }
+        return;
+    }
+
+    ipv4NetworkToHost(iph);
+
+    if (debug == 1)
+    {
+        printIPv4Header(iph);
+    } 
     
     char destinationBuffer[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &iph->destinationIP, destinationBuffer, INET_ADDRSTRLEN);

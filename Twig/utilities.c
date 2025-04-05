@@ -42,47 +42,6 @@ void checkInterface(const char* interface)
     }
 }
 
-// Pass in ethernet after reading from wire
-/*static void ethernetNetworkToHost(struct eth_hdr* header)
-{
-    header->type = ntohs(header->type);
-}*/
-
-// Pass in ethernet before writing to wire
-/*static void ethernetHostToNetwork(struct eth_hdr* header)
-{
-    header->type = htons(header->type);
-}*/
-
-// Pass in checksum after reading from wire
-/*static void checksumNetworkToHost(struct ipv4_header* header)
-{
-    header->headerChecksum = ntohs(header->headerChecksum);
-}*/
-
-// Pass in checksum before writing to wire (after changing ipv4 from host to network order)
-/*static void checsumHostToNetwork(struct ipv4_header* header)
-{
-    header->headerChecksum = htons(header->headerChecksum);
-}*/
-
-// Pass in ipv4 after reading from wire (only after verifying checksum)
-/*static void ipv4NetworkToHost(struct ipv4_header* header) 
-{
-    header->totalLength = ntohs(header->totalLength);
-    header->identification = ntohs(header->identification);
-    header->flagsAndFragmentOffset = ntohs(header->flagsAndFragmentOffset);
-}*/
-
-// Pass in ipv4 before writing to wire (before calculating checksum)
-/*static void ipv4HostToNetwork(struct ipv4_header* header)
-{
-    header->totalLength = htons(header->totalLength);
-    header->identification = htons(header->identification);
-    header->flagsAndFragmentOffset = htons(header->flagsAndFragmentOffset);
-}*/
-
-
 static void printIPv4Header(const struct ipv4_header* header) 
 {
     fprintf(stdout, "IPv4 Header:\n");
@@ -426,7 +385,7 @@ void readPacket(const int fd, char* interface, int debug)
         exit(1);
     }
 
-    struct eth_hdr* eth = (struct eth_hdr*) packetBuffer; // For ARP
+    struct eth_hdr* eth = (struct eth_hdr*) packetBuffer;
     if (debug == 1)
     {
         fprintf(stdout, "Ethernet header found, type: 0x%04x\n", ntohs(eth->type));
@@ -490,9 +449,7 @@ void readPacket(const int fd, char* interface, int debug)
                         {
                             fprintf(stdout, "ICMP checksum rejected, packet rejected\n");
                         }
-                    }
-
-                    
+                    } 
                     break;
                 case IPPROTO_UDP:
                     fprintf(stdout, "IP protocol: UDP\n");
@@ -542,6 +499,87 @@ void readPacket(const int fd, char* interface, int debug)
     }
 
     free(packetBuffer);
+}
+
+void createPacket(struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload)
+{
+    uint32_t remainingCaptureLength = receivedPcapHeader->caplen;
+
+    struct eth_hdr responseEthernetHeader;
+
+    responseEthernetHeader = createResponseEthernetHeader(receivedEthernetHeader);
+    remainingCaptureLength -= sizeof(struct eth_hdr);
+
+    if (remainingCaptureLength > 0) // ipv4 header valid
+    {
+        struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader);
+
+
+        switch (responseIPv4Header.protocol)
+        {
+            case IPPROTO_ICMP:
+                struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader);
+                uint8_t* responseICMPPayload = createResponsePayload(receivedPayload);
+                break;
+            
+            case IPPROTO_UDP:
+                struct udp_header responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader);
+                uint8_t* responseUDPPayload = createResponsePayload(receivedPayload);
+                break;
+            
+            case IPPROTO_TCP:
+                struct tcp_header responseTCPProtocolHeader = createResponseTCPHeader((struct tcp_header*) receivedProtocolHeader);
+                uint8_t* responseTCPPayload = createResponsePayload(receivedPayload);
+                break;
+            
+            default:
+                break;
+        }
+    }
+
+    else // Ethernet only packet (ARP)
+    {
+
+    }
+}
+
+struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader)
+{
+    struct eth_hdr responseHeader;
+    memcpy(&responseHeader.destinationMACAddress, receivedEthernetHeader->sourceMACAddress, sizeof(responseHeader.destinationMACAddress));
+    memcpy(&responseHeader.sourceMACAddress, receivedEthernetHeader->destinationMACAddress, sizeof(responseHeader.sourceMACAddress));
+    responseHeader.type = receivedEthernetHeader->type;
+
+    return responseHeader;
+}
+
+struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader)
+{
+    struct ipv4_header responseIPv4Header;
+    return responseIPv4Header;
+}
+
+struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader)
+{
+    struct icmp_header responseICMPHeader;
+    return responseICMPHeader;
+}
+
+struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader)
+{
+    struct udp_header responseUDPHeader;
+    return responseUDPHeader;
+}
+
+struct tcp_header createResponseTCPHeader(struct tcp_header* receivedTCPHeader)
+{
+    struct tcp_header responseTCPHeader;
+    return responseTCPHeader;
+}
+
+uint8_t* createResponsePayload(uint8_t* receivedPayload)
+{
+    return NULL;
 }
 
 void* MallocZ (int nbytes){

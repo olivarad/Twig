@@ -119,15 +119,19 @@ int readFileHeader(const int fd);
 
 void readPacket(const int fd, char* interface, int debug);
 
-void createPacket(struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload);
+void createPacket(struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload);
 
-struct eth_hdr* createResponseEthernetHeader(struct eth_hdr receivedEthernetHeader);
+struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader);
 
-struct ipv4_header createResponseIPV4Header(struct ipv4_header* receivedIPHeader);
+struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader);
 
-void* createResponseProtocolHeader(uint8_t protocol, void* receivedProtocolHeader);
+struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader);
 
-uint8_t createResponsePayload(uint8_t* receivedPayload);
+struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader);
+
+struct tcp_header createResponseTCPHeader(struct tcp_header* receivedTCPHeader);
+
+uint8_t* createResponsePayload(uint8_t* receivedPayload);
 
 void sendPacket(struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t payload);
 

@@ -1,8 +1,11 @@
 #pragma once 
 #include <stdint.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 typedef int32_t bpf_int32;
-typedef uint32_t bpf_u_int32;
+typedef u_int32_t bpf_u_int32;
 
 struct pcap_file_header 
 {
@@ -25,9 +28,9 @@ struct pcap_pkthdr
 
 struct eth_hdr 
 {
-	uint8_t destinationMACAddress[6];
-	uint8_t sourceMACAddress[6];
-	uint16_t type;
+	u_int8_t destinationMACAddress[6];
+	u_int8_t sourceMACAddress[6];
+	u_int16_t type;
 };
 
 struct ipv4_header
@@ -119,13 +122,13 @@ int readFileHeader(const int fd);
 
 void readPacket(const int fd, char* interface, int debug);
 
-void createPacket(struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload);
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength);
 
 struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader);
 
-struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader);
+struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength);
 
-struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader);
+struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength);
 
 struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader);
 
@@ -133,6 +136,6 @@ struct tcp_header createResponseTCPHeader(struct tcp_header* receivedTCPHeader);
 
 uint8_t* createResponsePayload(uint8_t* receivedPayload);
 
-void sendPacket(struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t payload);
+void sendICMPPacket(const int fd, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, struct icmp_header* protocolHeader, uint8_t* payload, size_t* payloadLength);
 
 void* MallocZ (int nbytes);

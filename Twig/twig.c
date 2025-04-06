@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
     int fd;
     do
     {
-        fd = open(networkAddress, O_RDONLY);
+        fd = open(networkAddress, O_RDWR);
         if (debug == 1)
         {
             fprintf(stdout, "open status: %d\n", fd);

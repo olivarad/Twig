@@ -602,6 +602,7 @@ struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader
             exit(1); // Not supported
     }
     printf("CALCULATED TOTAL LENGTH: %u\n", responseIPv4Header.totalLength);
+    responseIPv4Header.totalLength = htons(responseIPv4Header.totalLength);
     responseIPv4Header.identification = htons(rand() % 65536); // New ID for response
     responseIPv4Header.flagsAndFragmentOffset = htons(0x4000); // Don't Fragment
     responseIPv4Header.timeToLive = 64; // Reasonable default TTL

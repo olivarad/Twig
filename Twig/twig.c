@@ -28,6 +28,9 @@ int main(int argc, char *argv[])
     trimInterface(interface, debug);
 
     int fd;
+    struct timespec ts;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 2 * 1000000L;
     do
     {
         fd = open(networkAddress, O_RDWR);
@@ -37,7 +40,7 @@ int main(int argc, char *argv[])
         }
         if (fd == -1)
         {
-            sleep(1);
+            nanosleep(&ts, NULL);
         }
     } while (fd == -1);
 
@@ -59,7 +62,7 @@ int main(int argc, char *argv[])
     while(1 == 1)
     {
         readPacket(fd, interface, debug);
-        sleep(1);
+        nanosleep(&ts, NULL);
     }
 }
 

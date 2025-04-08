@@ -130,7 +130,7 @@ struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader
 
 struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength);
 
-struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader);
+struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header);
 
 struct tcp_header createResponseTCPHeader(struct tcp_header* receivedTCPHeader);
 
@@ -138,6 +138,6 @@ uint8_t* createResponsePayload(uint8_t* receivedPayload);
 
 struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen);
 
-void sendICMPPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, struct icmp_header* protocolHeader, uint8_t* payload, size_t* payloadLength);
+void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength);
 
 void* MallocZ (int nbytes);

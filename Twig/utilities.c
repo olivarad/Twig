@@ -1,4 +1,5 @@
 #include "utilities.h"
+#include <time.h>
 #include "arp.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +12,6 @@
 #include <string.h>
 #include <stdint.h> 
 #include <sys/uio.h>
-#include <time.h>
 
 #define EPOCH_DIFF 2208988800UL
 
@@ -645,7 +645,15 @@ struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHead
 struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header)
 {
     // Received header is passed in for modification to be used for response
-    responseIPv4Header->totalLength = htons(sizeof(struct ipv4_header) + sizeof(struct udp_header) + *payloadLength);
+    if (ntohs(receivedUDPHeader->destinationPort) == 37)
+    {
+        *payloadLength = (htons(*payloadLength));
+    }
+    responseIPv4Header->totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + *payloadLength;
+    if (ntohs(receivedUDPHeader->destinationPort) == 37)
+    {
+        responseIPv4Header->totalLength = (htons(responseIPv4Header->totalLength));
+    }
     responseIPv4Header->timeToLive = 64;
     uint32_t temp = responseIPv4Header->sourceIP;
     responseIPv4Header->sourceIP = responseIPv4Header->destinationIP;
@@ -710,6 +718,7 @@ void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* et
     iov[4].iov_base = payload;
     iov[4].iov_len = *payloadLength;
 
+    fprintf(stdout, "total length %u\n", ipHeader->totalLength);
     fprintf(stdout, "size: %lu\n", sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *payloadLength);
     fprintf(stdout, "payload size: %lu\n", *payloadLength);
 

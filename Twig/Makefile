@@ -2,7 +2,7 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -Wall -Werror -std=c11 -g
+CFLAGS = -Wall -Werror -std=c11 -g -D_POSIX_C_SOURCE=199309L
 
 # Source files
 SRC = twig.c utilities.c arp.c

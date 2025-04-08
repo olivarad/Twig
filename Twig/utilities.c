@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdint.h> 
 #include <sys/uio.h>
+#include <time.h>
 
 uint32_t netAddress;
 uint32_t broadcastAddress;
@@ -422,7 +423,7 @@ void readPacket(const int fd, char* interface, int debug)
         char destination[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &iph->destinationIP, destination, INET_ADDRSTRLEN);
 
-        if (1 == 1 || strcmp(destination, interface) == 0 || iph->destinationIP == broadcastAddress)
+        if (strcmp(destination, interface) == 0 || iph->destinationIP == broadcastAddress)
         {
             if (debug == 1)
             {
@@ -526,7 +527,9 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                 struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength);
                 struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader, receivedPayloadLength);
 
-                sendICMPPacket(fd, &responseEthernetHeader, &responseIPv4Header, &responseICMPProtocolHeader, receivedPayload, receivedPayloadLength);
+                struct pcap_pkthdr responsePcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
+
+                sendICMPPacket(fd, &responsePcapHeader, &responseEthernetHeader, &responseIPv4Header, &responseICMPProtocolHeader, receivedPayload, receivedPayloadLength);
                 break;
             
             case IPPROTO_UDP:
@@ -646,23 +649,41 @@ uint8_t* createResponsePayload(uint8_t* receivedPayload)
     return NULL;
 }
 
-void sendICMPPacket(const int fd, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, struct icmp_header* protocolHeader, uint8_t* payload, size_t* payloadLength)
+struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen)
+{
+    struct pcap_pkthdr header;
+    
+    header.caplen = CapLen;
+    header.len = CapLen;
+
+    time_t now = time(NULL);
+
+    header.ts_secs = (uint32_t)now;
+    header.ts_usecs = (uint32_t)now * 1000000;
+
+    return header;
+}
+
+void sendICMPPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, struct icmp_header* protocolHeader, uint8_t* payload, size_t* payloadLength)
 {
     int success = -1;
 
-    struct iovec iov[4];
+    struct iovec iov[5];
 
-    iov[0].iov_base = ethernetHeader;
-    iov[0].iov_len = sizeof(struct eth_hdr);
+    iov[0].iov_base = pcapHeader;
+    iov[0].iov_len = sizeof(struct pcap_pkthdr);
 
-    iov[1].iov_base = ipHeader;
-    iov[1].iov_len = sizeof(struct ipv4_header);
+    iov[1].iov_base = ethernetHeader;
+    iov[1].iov_len = sizeof(struct eth_hdr);
 
-    iov[2].iov_base = protocolHeader;
-    iov[2].iov_len = sizeof(struct icmp_header);
+    iov[2].iov_base = ipHeader;
+    iov[2].iov_len = sizeof(struct ipv4_header);
 
-    iov[3].iov_base = payload;
-    iov[3].iov_len = *payloadLength;
+    iov[3].iov_base = protocolHeader;
+    iov[3].iov_len = sizeof(struct icmp_header);
+
+    iov[4].iov_base = payload;
+    iov[4].iov_len = *payloadLength;
 
     printf("size: %u\n", sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *payloadLength);
     printf("payload size: %u\n", *payloadLength);

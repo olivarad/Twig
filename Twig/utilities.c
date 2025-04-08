@@ -546,6 +546,11 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                     uint8_t* payload = MallocZ(*receivedPayloadLength);
                     payload = memcpy(payload, &total, *receivedPayloadLength);
 
+                    *receivedPayloadLength = htons(*receivedPayloadLength);
+
+                    responseUDPIPv4Header.totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + *receivedPayloadLength;
+                    responseUDPIPv4Header.totalLength = (htons(responseUDPIPv4Header.totalLength));
+
                     responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, payload, receivedPayloadLength, &responseUDPIPv4Header);
 
                     struct pcap_pkthdr responseUDPProtocolPcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
@@ -554,6 +559,8 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                 }
                 else // udp ping
                 {
+                    responseUDPIPv4Header.totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + *receivedPayloadLength;
+                    
                     responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, &responseUDPIPv4Header);
                     
                     struct pcap_pkthdr responseUDPProtocolPcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
@@ -645,15 +652,6 @@ struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHead
 struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header)
 {
     // Received header is passed in for modification to be used for response
-    if (ntohs(receivedUDPHeader->destinationPort) == 37)
-    {
-        *payloadLength = (htons(*payloadLength));
-    }
-    responseIPv4Header->totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + *payloadLength;
-    if (ntohs(receivedUDPHeader->destinationPort) == 37)
-    {
-        responseIPv4Header->totalLength = (htons(responseIPv4Header->totalLength));
-    }
     responseIPv4Header->timeToLive = 64;
     uint32_t temp = responseIPv4Header->sourceIP;
     responseIPv4Header->sourceIP = responseIPv4Header->destinationIP;

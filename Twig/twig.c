@@ -150,10 +150,12 @@ void freeVariablesAndClose()
     if (interface != NULL)
     {
         free(interface);
+        interface = NULL;
     }
     if (networkAddress != NULL)
     {
         free(networkAddress);
+        networkAddress = NULL;
     }
     freePacketBufferAndPayload();
 }

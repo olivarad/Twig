@@ -816,9 +816,11 @@ void freePacketBufferAndPayload()
     if (packetBuffer != NULL)
     {
         free(packetBuffer);
+        packetBuffer = NULL;
     }
     if (payload != NULL)
     {
         free(payload);
+        payload = NULL;
     }
 }

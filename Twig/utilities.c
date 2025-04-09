@@ -287,7 +287,7 @@ static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* p
 
     if (debug == 1)
     {
-        fprintf(stdout, "Calculated TCP Header Checksum: 0x%04X\n", retval);
+        fprintf(stdout, "Calculated ICMP Header Checksum: 0x%04X\n", retval);
     }
     
     return htonl(retval);
@@ -404,8 +404,8 @@ void readPacket(const int fd, char* interface, int debug)
             return;
         }
         fflush(stdout);
-        fprintf(stderr, "Truncated packet header: only %u bytes read\n", bytesRead);
-        exit(1);
+        fprintf(stderr, "Skipping truncated packet header: only %u bytes read\n", bytesRead);
+        return;
     }
     
     if (debug == 1)
@@ -423,8 +423,8 @@ void readPacket(const int fd, char* interface, int debug)
     if (bytesRead != pktHeader.caplen)
     {
         fflush(stdout);
-        fprintf(stdout, "Truncated packet: only %u bytes read\n", bytesRead);
-        exit(1);
+        fprintf(stdout, "Skipping  truncated packet: only %u bytes read\n", bytesRead);
+        return;
     }
 
     struct eth_hdr* eth = (struct eth_hdr*) packetBuffer;
@@ -560,6 +560,11 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
         switch (receivedIPHeader->protocol)
         {
             case IPPROTO_ICMP:
+                if (debug == 1)
+                {
+                    fprintf(stdout, "Creating response for ICMP packet\n");
+                }
+
                 struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, debug);
                 struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader, receivedPayloadLength, debug);
 
@@ -568,6 +573,10 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                 break;
             
             case IPPROTO_UDP:
+                if (debug == 1)
+                {
+                    fprintf(stdout, "Creating response for UDP packet\n");
+                }
                 struct ipv4_header responseUDPIPv4Header = *receivedIPHeader;
 
                 struct udp_header* receivedUDPHeader = (struct udp_header*)receivedProtocolHeader;
@@ -615,6 +624,10 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                 break;
             
             /*case IPPROTO_TCP:
+                if (debug == 1)
+                {
+                    fprintf(stdout, "Creating response for TCP packet\n");
+                }
                 struct tcp_header responseTCPProtocolHeader = createResponseTCPHeader((struct tcp_header*) receivedProtocolHeader);
                 uint8_t* responseTCPPayload = createResponsePayload(receivedPayload);
                 break;*/

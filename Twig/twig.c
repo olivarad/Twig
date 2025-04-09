@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
 
     struct timespec ts;
     ts.tv_sec = 0;
-    ts.tv_nsec = 2 * 1000000L;
+    ts.tv_nsec = 2;
     while (keepRunning == 1 && fd == -1)
     {
         fd = open(networkAddress, O_RDWR);

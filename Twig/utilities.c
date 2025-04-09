@@ -15,6 +15,12 @@
 
 #define EPOCH_DIFF 2208988800UL
 
+size_t maximumPacketSize = 1500;
+size_t maximumPayloadSize = 0;
+
+char* packetBuffer = NULL;
+uint8_t* payload = NULL;
+
 uint32_t netAddress;
 uint32_t broadcastAddress;
 uint8_t subnetLength;
@@ -381,6 +387,9 @@ int readFileHeader(const int fd)
         fprintf(stderr, "Invalid magic number: 0x%08x\n", pfh.magic);
         exit(1);
     }
+
+    packetBuffer = MallocZ(maximumPacketSize);
+
     return 1;
 }
 
@@ -404,7 +413,12 @@ void readPacket(const int fd, char* interface, int debug)
         fprintf(stdout, "Packet header read: %u bytes\n", bytesRead);
     }
 
-    char* packetBuffer = MallocZ(pktHeader.caplen);
+    if (maximumPacketSize < pktHeader.caplen) // Resize needed
+    {
+        maximumPacketSize = pktHeader.caplen;
+        packetBuffer = ReallocZ(packetBuffer, maximumPacketSize);
+    }
+
     bytesRead = read(fd, packetBuffer, pktHeader.caplen);
     if (bytesRead != pktHeader.caplen)
     {
@@ -530,8 +544,6 @@ void readPacket(const int fd, char* interface, int debug)
             }
         }
     }
-
-    free(packetBuffer);
 }
 
 void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, const int debug)
@@ -567,7 +579,16 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                     time_t total = currentTime + EPOCH_DIFF;
                     total = htonl(total);
                     *receivedPayloadLength = sizeof(time_t);
-                    uint8_t* payload = MallocZ(*receivedPayloadLength);
+                    if (payload == NULL)
+                    {
+                        maximumPayloadSize = *receivedPayloadLength;
+                        payload = MallocZ(*receivedPayloadLength);
+                    }
+                    else if (maximumPayloadSize < *receivedPayloadLength)
+                    {
+                        maximumPayloadSize = *receivedPayloadLength;
+                        payload = ReallocZ(payload, *receivedPayloadLength);
+                    }
                     payload = memcpy(payload, &total, *receivedPayloadLength);
 
                     *receivedPayloadLength = htons(*receivedPayloadLength);
@@ -763,4 +784,28 @@ void* MallocZ (int nbytes){
     memset (ptr, '\00', nbytes);
 
     return (ptr);
+}
+
+void* ReallocZ(void* ptr, size_t nbytes)
+{
+    ptr = realloc(ptr, nbytes);
+    if (ptr == NULL)
+    {
+        perror ("ReallocZ failed, fatal\n");
+        exit(66);
+    }
+
+    return (ptr);
+}
+
+void freePacketBufferAndPayload()
+{
+    if (packetBuffer != NULL)
+    {
+        free(packetBuffer);
+    }
+    if (payload != NULL)
+    {
+        free(payload);
+    }
 }

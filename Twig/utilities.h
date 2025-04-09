@@ -141,3 +141,7 @@ struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen);
 void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength);
 
 void* MallocZ (int nbytes);
+
+void* ReallocZ(void* ptr, size_t nbytes);
+
+void freePacketBufferAndPayload();

@@ -128,7 +128,7 @@ static int verifyChecksum(const struct ipv4_header* header, const int debug)
     return (computed_checksum == original_checksum);
 }
 
-static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length) 
+static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
 {
 
     struct udp_pseudo_header pseudo_hdr;
@@ -172,16 +172,23 @@ static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header*
     {
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
+
+    uint16_t retval = ((uint16_t)~checksum);
+
+    if (debug == 1)
+    {
+        fprintf(stdout, "Calculated UDP Header Checksum: 0x%04X\n", retval);
+    }
     
-    return htonl((uint16_t)~checksum);
+    return htonl(retval);
 }
 
-static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length) 
+static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
 {
-    return calculateUDPChecksum(udp, ip, payload, payload_length) == 0;
+    return calculateUDPChecksum(udp, ip, payload, payload_length, debug) == 0;
 }
 
-static uint16_t calculateTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length) 
+static uint16_t calculateTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
 {
 
     struct tcp_pseudo_header pseudo_hdr;
@@ -225,13 +232,20 @@ static uint16_t calculateTCPChecksum(struct tcp_header* tcp, struct ipv4_header*
     {
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
+
+    uint16_t retval = ((uint16_t)~checksum);
+
+    if (debug == 1)
+    {
+        fprintf(stdout, "Calculated TCP Header Checksum: 0x%04X\n", retval);
+    }
     
-    return htonl((uint16_t)~checksum);
+    return htonl(retval);
 }
 
-static int verifyTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length) 
+static int verifyTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
 {
-    return calculateTCPChecksum(tcp, ip, payload, payload_length) == 0;
+    return calculateTCPChecksum(tcp, ip, payload, payload_length, debug) == 0;
 }
 
 static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length) 
@@ -467,7 +481,7 @@ void readPacket(const int fd, char* interface, int debug)
                     struct udp_header* udpHeader = (struct udp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint8_t* udpPayload = (uint8_t*)(udpHeader + 1);
 
-                    if (verifyUDPChecksum(udpHeader, iph, udpPayload, &payloadLength))
+                    if (verifyUDPChecksum(udpHeader, iph, udpPayload, &payloadLength, debug))
                     {
                         if (debug == 1)
                         {
@@ -488,7 +502,7 @@ void readPacket(const int fd, char* interface, int debug)
                     struct tcp_header* tcpHeader = (struct tcp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint8_t* tcpPayload = (uint8_t*)(tcpHeader + 1);
 
-                    if (verifyTCPChecksum(tcpHeader, iph, tcpPayload, &payloadLength))
+                    if (verifyTCPChecksum(tcpHeader, iph, tcpPayload, &payloadLength, debug))
                     {
                         if (debug == 1)
                         {
@@ -667,7 +681,7 @@ struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, 
     responseUDPHeader.destinationPort = receivedUDPHeader->sourcePort;
     responseUDPHeader.length = sizeof(struct udp_header) + *payloadLength;
     responseUDPHeader.checksum = 0;
-    responseUDPHeader.checksum = calculateUDPChecksum(&responseUDPHeader, responseIPv4Header, payload, payloadLength);
+    responseUDPHeader.checksum = calculateUDPChecksum(&responseUDPHeader, responseIPv4Header, payload, payloadLength, debug);
     
     return responseUDPHeader;
 }

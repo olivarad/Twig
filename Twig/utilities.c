@@ -248,7 +248,7 @@ static int verifyTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, con
     return calculateTCPChecksum(tcp, ip, payload, payload_length, debug) == 0;
 }
 
-static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length) 
+static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length, const int debug) 
 {
     uint32_t checksum = 0;
     
@@ -277,16 +277,23 @@ static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* p
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
     
-    return htonl((uint16_t)~checksum);
+    uint16_t retval = ((uint16_t)~checksum);
+
+    if (debug == 1)
+    {
+        fprintf(stdout, "Calculated TCP Header Checksum: 0x%04X\n", retval);
+    }
+    
+    return htonl(retval);
 }
 
-static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length) 
+static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length, const int debug) 
 {
     uint16_t original_checksum = icmp->checkSum;
     icmp->checkSum = 0; // Set to zero for correct calculation
 
     // Compute the checksum over the ICMP header and payload
-    uint16_t computed_checksum = calculateICMPChecksum(icmp, payload, &payload_length);
+    uint16_t computed_checksum = calculateICMPChecksum(icmp, payload, &payload_length, debug);
 
     // Restore the original checksum
     icmp->checkSum = original_checksum;
@@ -460,7 +467,7 @@ void readPacket(const int fd, char* interface, int debug)
                     payloadLength = ntohs(iph->totalLength) - headerLength - sizeof(struct icmp_header);
                     uint8_t* icmp_payload = (uint8_t*)(icmpHeader + 1); // Payload starts after the ICMP header
 
-                    if (verifyICMPChecksum(icmpHeader, icmp_payload, payloadLength))
+                    if (verifyICMPChecksum(icmpHeader, icmp_payload, payloadLength, debug))
                     {
                         if (debug == 1)
                         {
@@ -541,7 +548,7 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
         switch (receivedIPHeader->protocol)
         {
             case IPPROTO_ICMP:
-                struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength);
+                struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, debug);
                 struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader, receivedPayloadLength, debug);
 
                 struct pcap_pkthdr responsePcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
@@ -652,7 +659,7 @@ struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader
     return responseIPv4Header;
 }
 
-struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength)
+struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength, const int debug)
 {
     struct icmp_header responseICMPHeader;
     responseICMPHeader.type = 0;
@@ -661,7 +668,7 @@ struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHead
     responseICMPHeader.identifier = receivedICMPHeader->identifier;
     responseICMPHeader.sequenceNumber = receivedICMPHeader->sequenceNumber;
 
-    responseICMPHeader.checkSum = calculateICMPChecksum(&responseICMPHeader, payload, payloadLength);
+    responseICMPHeader.checkSum = calculateICMPChecksum(&responseICMPHeader, payload, payloadLength, debug);
 
     return responseICMPHeader;
 }

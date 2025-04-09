@@ -7,31 +7,42 @@
 #include <fcntl.h>
 #include <stdint.h> 
 #include <time.h>
+#include <signal.h>
 #include "utilities.h"
 
 #define PCAP_MAGIC         0xa1b2c3d4
 #define PCAP_VERSION_MAJOR 2
 #define PCAP_VERSION_MINOR 4
 
+volatile sig_atomic_t keepRunning = 1;
+
 int debug = 0;
 
+int fd = -1;
 char* interface = NULL;
 char* networkAddress = NULL;
 
 void checkOptions(const int argc, char* argv[]);
 
+void freeVariablesAndClose();
+
+void handleSigint(int sig);
+
 int main(int argc, char *argv[])
 {
+    signal(SIGINT, handleSigint);
+
+    fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK);
+
     checkOptions(argc, argv);
 
     networkAddress = calculateNetworkAddress(interface, networkAddress, debug);
     trimInterface(interface, debug);
 
-    int fd;
     struct timespec ts;
     ts.tv_sec = 0;
     ts.tv_nsec = 2 * 1000000L;
-    do
+    while (keepRunning == 1 && fd == -1)
     {
         fd = open(networkAddress, O_RDWR);
         if (debug == 1)
@@ -42,28 +53,44 @@ int main(int argc, char *argv[])
         {
             nanosleep(&ts, NULL);
         }
-    } while (fd == -1);
+    }
+
+    if (keepRunning == 0)
+    {
+        freeVariablesAndClose();
+        exit(0);
+    }
 
     int headerSuccess = 0;
-    do
+    while (keepRunning == 1 && headerSuccess == 0)
     {
         if (debug == 1)
         {
             fprintf(stdout, "Reading pcap file header\n");
         }
         headerSuccess = readFileHeader(fd);
-    } while (headerSuccess == 0);
+    }
+
+    if (keepRunning == 0)
+    {
+        freeVariablesAndClose();
+        exit(0);
+    }
 
     if (debug == 1)
     {
         fprintf(stdout, "Pcap file header read\n");
     }
 
-    while(1 == 1)
+    while(keepRunning)
     {
         readPacket(fd, interface, debug);
         nanosleep(&ts, NULL);
     }
+
+    freeVariablesAndClose();
+    exit(0);
+
 }
 
 void checkOptions(const int argc, char* argv[])
@@ -112,4 +139,29 @@ void checkOptions(const int argc, char* argv[])
         fprintf(stdout, "debug enabled\n");
         fprintf(stdout, "interface: %s\n", interface);
     }
+}
+
+void freeVariablesAndClose()
+{
+    if (fd != -1)
+    {
+        close(fd);
+    }
+    if (interface != NULL)
+    {
+        free(interface);
+    }
+    if (networkAddress != NULL)
+    {
+        free(networkAddress);
+    }
+    freePacketBufferAndPayload();
+}
+
+void handleSigint(int sig)
+{
+    (void)sig;
+    fflush(stdout);
+    fprintf(stdout, "Caught Ctrl+C. Quitting nicely...\n");
+    keepRunning = 0;
 }

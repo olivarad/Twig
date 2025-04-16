@@ -28,6 +28,8 @@ void freeVariablesAndClose();
 
 void handleSigint(int sig);
 
+void ensurePcapFileHeader(int fd);
+
 int main(int argc, char *argv[])
 {
     signal(SIGINT, handleSigint);
@@ -44,7 +46,7 @@ int main(int argc, char *argv[])
     ts.tv_nsec = 1;
     while (keepRunning == 1 && fd == -1)
     {
-        fd = open(networkAddress, O_RDWR);
+        fd = open(networkAddress, O_RDWR | O_APPEND | O_CREAT, 0660);
         if (debug == 1)
         {
             fprintf(stdout, "open status: %d\n", fd);
@@ -60,6 +62,8 @@ int main(int argc, char *argv[])
         freeVariablesAndClose();
         exit(0);
     }
+
+    ensurePcapFileHeader(fd);
 
     int headerSuccess = 0;
     while (keepRunning == 1 && headerSuccess == 0)
@@ -166,4 +170,28 @@ void handleSigint(int sig)
     fflush(stdout);
     fprintf(stdout, "Caught Ctrl+C. Quitting nicely...\n");
     keepRunning = 0;
+}
+
+void ensurePcapFileHeader(int fd)
+{
+    while (1)
+    {
+        struct pcap_file_header pfh;
+        if (read(fd, &pfh, sizeof(struct pcap_file_header)) != sizeof(struct pcap_file_header)) // Empty file
+        {
+            pfh.magic = 0xa1b2c3d4;
+            pfh.version_major = 2;
+            pfh.version_minor = 4;
+            pfh.thiszone = 0;
+            pfh.sigfigs = 0;
+            pfh.snaplen = 65535;
+            pfh.linktype = 1;
+            if (write(fd, &pfh, sizeof(pfh)) == sizeof(pfh))
+            {
+                lseek(fd, 0, SEEK_SET);
+                return;
+            }
+            else lseek(fd, 0, SEEK_SET);
+        }
+    }
 }

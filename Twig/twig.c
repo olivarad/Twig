@@ -172,26 +172,45 @@ void handleSigint(int sig)
     keepRunning = 0;
 }
 
-void ensurePcapFileHeader(int fd)
+void ensurePcapFileHeader(int fd) 
 {
-    while (1)
+    uint8_t buf[24];
+
+    if (read(fd, buf, sizeof(buf)) != sizeof(buf)) 
     {
-        struct pcap_file_header pfh;
-        if (read(fd, &pfh, sizeof(struct pcap_file_header)) != sizeof(struct pcap_file_header)) // Empty file
+        uint32_t magic = 0xa1b2c3d4;
+        uint16_t ver_major = 2;
+        uint16_t ver_minor = 4;
+        int32_t  thiszone = 0;
+        uint32_t sigfigs = 0;
+        uint32_t snaplen = 10000;
+        uint32_t linktype = 1;
+
+        memcpy(buf + 0,  &magic, sizeof(bpf_u_int32));
+        memcpy(buf + 4,  &ver_major, sizeof(unsigned short));
+        memcpy(buf + 6,  &ver_minor, sizeof(unsigned short));
+        memcpy(buf + 8,  &thiszone,  sizeof(bpf_int32));
+        memcpy(buf + 12, &sigfigs,   sizeof(bpf_u_int32));
+        memcpy(buf + 16, &snaplen,   sizeof(bpf_u_int32));
+        memcpy(buf + 20, &linktype,  sizeof(bpf_u_int32));
+
+        lseek(fd, 0, SEEK_SET);
+        if (write(fd, buf, sizeof(buf)) != sizeof(buf)) 
         {
-            pfh.magic = 0xa1b2c3d4;
-            pfh.version_major = 2;
-            pfh.version_minor = 4;
-            pfh.thiszone = 0;
-            pfh.sigfigs = 0;
-            pfh.snaplen = 65535;
-            pfh.linktype = 1;
-            if (write(fd, &pfh, sizeof(pfh)) == sizeof(pfh))
-            {
-                lseek(fd, 0, SEEK_SET);
-                return;
-            }
-            else lseek(fd, 0, SEEK_SET);
+            exit(66);
         }
+    }
+    lseek(fd, 0, SEEK_SET);
+    if (debug == 1)
+    {
+        uint8_t check[24];
+        read(fd, check, sizeof(check));
+            fprintf(stdout, "PCAP file header:\n");
+        for (int i = 0; i < 24; i++) 
+        {
+            fprintf(stdout, "%02x ", check[i]);
+        }
+        fprintf(stdout, "\n");
+        lseek(fd, 0, SEEK_SET);
     }
 }

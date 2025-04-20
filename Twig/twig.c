@@ -21,7 +21,9 @@ int debug = 0;
 int** fileDescriptors = NULL;
 char** interfaces = NULL;
 char** networkAddresses = NULL;
+char* defaultRoute = NULL;
 unsigned interfaceCount = 0;
+
 
 void checkOptions(const int argc, char* argv[]);
 
@@ -143,9 +145,6 @@ void checkOptions(const int argc, char* argv[])
             }
         }
 
-        printf("MEOW");
-        fflush(stdout);
-
         interfaces = MallocZ(requestedInterfaceCount * sizeof(char*));
         for (unsigned i = 0; i < requestedInterfaceCount; ++i)
         {
@@ -161,16 +160,12 @@ void checkOptions(const int argc, char* argv[])
         }
         
         fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
-        printf("MEOW");
-        fflush(stdout);
         for (int i = 0; i < requestedInterfaceCount; ++i)
         {
             fileDescriptors[i] = MallocZ(sizeof(int));
             *fileDescriptors[i] = -1; // ensure assigned of not open
         }
         interfaceCount = requestedInterfaceCount;
-        printf("MEOW");
-        fflush(stdout);
         unsigned currentInterfaceIndex = 0;
 
         for (int i = 1; i < argc; ++i)
@@ -206,6 +201,35 @@ void checkOptions(const int argc, char* argv[])
             else if (strcmp(argv[i], "-h") == 0) // help
             {
                 printHelp();
+            }
+            else if (strcmp(argv[i], "--default-route"))
+            {
+                if (i + 1 >= argc || interfaceCount < 2) // Reset, no interface specified, or default interface specification not allowed (host)
+                {
+                    printUsage(argv[0]);
+                }
+
+                else
+                {
+                    // Default route specification allowed
+                    if (defaultRoute == NULL)
+                    {
+                        if (i + 1 >= argc)
+                        {
+                            // Default route specified to no value
+                            printUsage(argv[0]);
+                        }
+                        defaultRoute = MallocZ(INET_ADDRSTRLEN + 1); // +1 for null termination
+                        strcpy(defaultRoute, argv[i + 1]);
+                        ++i;
+                    }
+                    else
+                    {
+                        fflush(stdout);
+                        fprintf(stderr, "Error: default route re-specified, exiting");
+                        printUsage(argv[0]);
+                    }
+                }
             }
             else // invalid option, print usage
             {

@@ -38,6 +38,10 @@ void printHelp()
     fprintf(stdout, "Options:\n\
         \t-i: specify interface. ex: -i 172.31.128.2_24\n\
         \t-d: enable debugging\n\
+        \t\t1. print routing table upon change\n\
+        \t\t2. print packet TTL messages\n\
+        \t\t3. print UDP echo response messages\n\
+        \t-r specify RIP second interval\n\
         \t-h: print options\n");
     exit(0);
 }

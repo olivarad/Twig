@@ -403,19 +403,24 @@ int readFileHeader(const int fd)
     return 1;
 }
 
-void readPacket(const int fd, char* interface, int debug)
+void* readPacket(void* args)
 {
+    struct readPacketArguments* arguments = (struct readPacketArguments*)args;
+    int fd = arguments->fd;
+    char* interface = arguments->interface;
+    int debug = arguments->debug;
+
     struct pcap_pkthdr pktHeader;
     int bytesRead = read(fd, &pktHeader, sizeof(pktHeader));
     if (bytesRead != sizeof(pktHeader))
     {
         if (bytesRead == 0)
         {
-            return;
+            return NULL;
         }
         fflush(stdout);
         fprintf(stderr, "Skipping truncated packet header: only %u bytes read\n", bytesRead);
-        return;
+        return NULL;
     }
     
     if (debug == 1)
@@ -434,7 +439,7 @@ void readPacket(const int fd, char* interface, int debug)
     {
         fflush(stdout);
         fprintf(stdout, "Skipping  truncated packet: only %u bytes read\n", bytesRead);
-        return;
+        return NULL;
     }
 
     struct eth_hdr* eth = (struct eth_hdr*) packetBuffer;
@@ -460,7 +465,7 @@ void readPacket(const int fd, char* interface, int debug)
                 fflush(stdout);
                 fprintf(stderr, "Header checksum invalid, rejecting packet\n");
             }
-            return;
+            return NULL;
         }
 
         addArpEntry(iph->sourceIP, eth->sourceMACAddress);
@@ -554,6 +559,7 @@ void readPacket(const int fd, char* interface, int debug)
             }
         }
     }
+    return NULL;
 }
 
 void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, const int debug)

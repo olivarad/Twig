@@ -108,6 +108,13 @@ struct icmp_header
     uint16_t sequenceNumber;
 };
 
+struct readPacketArguments
+{
+	int fd;
+	char* interface;
+	int debug;
+};
+
 void printUsage(const char* program);
 
 void printHelp();
@@ -120,7 +127,7 @@ void trimInterfaces(char** interfaces, const unsigned count, int debug);
 
 int readFileHeader(const int fd);
 
-void readPacket(const int fd, char* interface, int debug);
+void* readPacket(void* args);
 
 void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, const int debug);
 

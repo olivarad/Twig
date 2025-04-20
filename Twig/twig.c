@@ -8,6 +8,7 @@
 #include <stdint.h> 
 #include <time.h>
 #include <signal.h>
+#include <pthread.h>
 #include "utilities.h"
 
 #define PCAP_MAGIC         0xa1b2c3d4
@@ -53,7 +54,7 @@ int main(int argc, char *argv[])
         notAllAssigned = -1;
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
-            if (*fileDescriptors[i] != -1)
+            if (*fileDescriptors[i] == -1)
             {
                 *fileDescriptors[i] = open(networkAddresses[i], O_RDWR | O_APPEND | O_CREAT, 0660);
                 if (debug == 1)
@@ -89,7 +90,7 @@ int main(int argc, char *argv[])
         headerSuccess = 1;
         if (debug == 1)
         {
-            fprintf(stdout, "Reading pcap file header\n");
+            //fprintf(stdout, "Reading pcap file header\n");
         }
         
         for (unsigned i = 0; i < interfaceCount; ++i)
@@ -112,10 +113,27 @@ int main(int argc, char *argv[])
         fprintf(stdout, "Pcap file header read\n");
     }
 
+    pthread_t threads[interfaceCount];
+
+    struct readPacketArguments threadArguments[interfaceCount];
+    for (unsigned i = 0; i < interfaceCount; ++i)
+    {
+        threadArguments[i].fd = *fileDescriptors[i];
+        threadArguments[i].interface = interfaces[i];
+        threadArguments[i].debug = debug;
+    }
+
     while(keepRunning)
     {
-        // TODO parallelize packet handling
-        //readPacket(fd, interface, debug);
+        for (unsigned i = 0; i < interfaceCount; ++i)
+        {
+            pthread_create(&threads[i], NULL, readPacket, &threadArguments[i]);
+        }
+
+        for (unsigned i = 0; i < interfaceCount; ++i)
+        {
+            pthread_join(threads[i], NULL);
+        }
         nanosleep(&ts, NULL);
     }
 
@@ -182,7 +200,7 @@ void checkOptions(const int argc, char* argv[])
                     if (interfaces[j] != NULL && strcpy(argv[i + 1], interfaces[j]))
                     {
                         fflush(stdout);
-                        fprintf(stderr, "Reassignedment of interface: %s, exiting.", interfaces[j]);
+                        fprintf(stderr, "Reassignment of interface: %s, exiting.", interfaces[j]);
                         exit(66);
                     }
                 }
@@ -279,6 +297,12 @@ void freeVariablesAndClose()
             free(networkAddresses[i]);
             networkAddresses[i] = NULL;
         }
+    }
+
+    if (defaultRoute != NULL)
+    {
+        free(defaultRoute);
+        defaultRoute = NULL;
     }
 
     freePacketBufferAndPayload();

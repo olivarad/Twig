@@ -24,6 +24,7 @@ char** interfaces = NULL;
 char** networkAddresses = NULL;
 char* defaultRoute = NULL;
 unsigned interfaceCount = 0;
+int RIPInterval = 30;
 
 
 void checkOptions(const int argc, char* argv[]);
@@ -247,6 +248,24 @@ void checkOptions(const int argc, char* argv[])
                         fprintf(stderr, "Error: default route re-specified, exiting");
                         printUsage(argv[0]);
                     }
+                }
+            }
+            else if (strcmp(argv[i], "-r"))
+            {
+                if (i + 1 >= argc)
+                {
+                    printUsage(argv[0]);
+                }
+                else
+                {
+                    RIPInterval = atoi(argv[i + 1]);
+                    if (RIPInterval <= 0)
+                    {
+                        fflush(stdout);
+                        fprintf(stderr, "Error: invalid RIP interval - %s, exiting\n", argv[i + 1]);
+                        exit(66);
+                    }
+                    ++i;
                 }
             }
             else // invalid option, print usage

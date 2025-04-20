@@ -13,41 +13,117 @@ import sys
 import threading
 
 # conf.use_pcap = True
-conf.L3socket = L3RawSocket
+# conf.L3socket = L3RawSocket # changed
+
+def dec_ttl(pkt):
+	if IP not in pkt:
+		return pkt
+
+	if args.debug > 1:
+		print(f"ttl: {pkt[IP].ttl} -> {pkt[IP].ttl-1}")
+	pkt[IP].ttl -= 1
+	if pkt[IP].ttl <= 0:	
+		## packet expired on interface, ignore
+		return None
+	del pkt[IP].chksum ## delete old checksum so it gets recalculated.
+	return pkt
+
 
 ## super slow and bulky...
 def sniff_iface(stop_threads, capfile, network):
 	capwriter = PcapWriter(capfile, append=True, sync=True) ## add endianness, snaplen, bufsize etc. 
-
+	iface_mac = netifaces.ifaddresses(args.iface)[netifaces.AF_LINK][0]['addr']
+	if (args.debug > 0):
+		print("interface in use has mac:", iface_mac)
 	## sniff pkts
 	## only operate on IPv4 packets whose destination is inside the pcap's network.
 
-	sniff(iface=args.iface, prn=lambda x: write_packetlist(capwriter, x), stop_filter=lambda _: stop_threads.is_set(), filter=f"( udp or tcp or icmp ) and net { str(network.network).split('/')[0] } mask { network.netmask }" )
+	# sniff(iface=args.iface, prn=lambda x: write_packetlist(capwriter, iface_mac, x), stop_filter=lambda _: stop_threads.is_set(), filter=f"arp or (( udp or tcp or icmp ) and net { str(network.network).split('/')[0] } mask { network.netmask })" )
+	sniff(iface=args.iface, prn=lambda x: write_packetlist(capwriter, iface_mac, x), stop_filter=lambda _: stop_threads.is_set(), filter=f"( arp or ( ( udp or tcp or icmp ) and dst net 172.31.0.0 mask 255.255.0.0 ) ) and ( ether dst {iface_mac} or ether dst ff:ff:ff:ff:ff:ff ) " )
 	
-def write_packetlist(capwriter, pkt):
+def write_packetlist(capwriter, iface_mac, pkt):
+
+	pkt = dec_ttl(pkt)
+
+	## if the packet expired on the interface, dont forward it.
+	if(pkt == None):
+		return
+
+	if Ether not in pkt:
+		if args.debug:
+			print("non-ethernet packet ignored.")
+		return
+
+	## reject incoming arp requests to prevent loops...
+	if ARP in pkt and pkt[ARP].op == 1:
+		return
+
+	if pkt[Ether].src.startswith("fe:"):
+		## dont forward packets from the inside of the network back into it
+		return
+
+	
+	pkt[Ether].dst = "ff:ff:ff:ff:ff:ff"
+
+	# print(pkt.summary())
 	capwriter.write(raw(pkt))#, linktype=1, ifname=args.iface) # apparently doesnt work for scapy 2.5.0  ¯\_(ツ)_/¯
 	capwriter.flush()
 
 ## super slow and bulky...
 def sniff_pcap(stop_threads, capfile, network):
 	capreader = PcapReader(capfile)
+	iface_mac = netifaces.ifaddresses(args.iface)[netifaces.AF_LINK][0]['addr']
+	# s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 	while(not stop_threads.is_set()):
 		try:
 			## sniff a pkt from the capture file
-			pkt = capreader.recv()
-			if IP in pkt and ipaddress.ip_address(pkt[IP].src) in network.network:
+
+			pkt = dec_ttl(capreader.recv())
+			# pkt = capreader.recv()
+
+			## if the packet expired on the interface, dont forward it.
+			if(pkt == None):
+				continue
+			
+			if Ether not in pkt:
+				if args.debug:
+					print("non-ethernet packet ignored.")
+				continue
+
+			print(pkt.summary())
+			# if IP in pkt and ipaddress.ip_address(pkt[IP].src) in network.network:
 				## if from this network and to this network, dont move it outside the pcap.
-				if ipaddress.ip_address(pkt[IP].src) in network.network and ipaddress.ip_address(pkt[IP].dst) in network.network:
-					continue
-				if(args.debug >0):
-					print("sending pkt", pkt.summary())
+			if IP in pkt and ipaddress.ip_address(pkt[IP].src) in network.network and ipaddress.ip_address(pkt[IP].dst) in network.network:
+				print("didnt send packet internal to this network")
+				continue
+			if IP in pkt and ipaddress.ip_address(pkt[IP].dst) == ipaddress.ip_address("255.255.255.255"):
+				## temporary - prevent IP limited broadcast from going out from the pcap and looping. this is only an issue currently due to my messed up RIPv1 implementation from last year.
+				continue
+			if ARP in pkt and pkt[ARP].op == 2:
+				continue
 
-				## write pkt out. specifying interface doesnt do anything.
-				# send(pkt.getlayer(IP), verbose=1, iface=args.iface)
-				send(pkt.getlayer(IP), verbose=args.debug)
+			## do NOT forward packets from the outside interface back to it, and do not forward MAC broadcast packets out of our pcap network.
+			## also do NOT forward packets which do not have fe:... as their source adress. all packets sent from shrubs will have fe:... as sources.
+			if not pkt[Ether].src.startswith("5e:fe:") : ## iface_mac == pkt[Ether].src or pkt[Ether].dst == 'ff:ff:ff:ff:ff:ff' or 
+				if(args.debug > 2):
+					print("packet not for me, mac doesnt match...")
+				continue
 
-		except:
-			# sleep for 10ms to prevent thrashing.
+
+			if(args.debug  == 1 and IP in pkt):
+				print("sending pkt to", pkt[IP].dst)
+			elif(args.debug >1):
+				print("sending pkt", pkt.summary())
+
+			## write pkt out. specifying interface doesnt do anything.
+			send(pkt.getlayer(IP), verbose=args.debug)
+			# pkt[Ether].src = iface_mac
+			# sendp(pkt, verbose=args.debug, iface=args.iface) # if using arp
+
+		except socket.error as e:
+			print(f"socket error: {e}")
+			pass
+		except EOFError:
 			time.sleep(0.01)
 			pass
 
@@ -73,9 +149,14 @@ if __name__ == '__main__':
 
 	args = parser.parse_args()
 
+	if (args.debug > 0):
+		print(f"debug enabled: lvl {args.debug}")
+
 	## remove the single quotes that argparse adds to the arguments for some reason...
 	args.network = args.network.replace("'", "")
 	args.iface = args.iface.replace("'", "")
+
+	conf.iface = args.iface
 
 	## check format of network argument and parse it.
 	netparts = args.network.split("_")

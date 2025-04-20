@@ -18,9 +18,10 @@ volatile sig_atomic_t keepRunning = 1;
 
 int debug = 0;
 
-int fd = -1;
-char* interface = NULL;
-char* networkAddress = NULL;
+int** fileDescriptors = NULL;
+char** interfaces = NULL;
+char** networkAddresses = NULL;
+unsigned interfaceCount = 0;
 
 void checkOptions(const int argc, char* argv[]);
 
@@ -38,20 +39,32 @@ int main(int argc, char *argv[])
 
     checkOptions(argc, argv);
 
-    networkAddress = calculateNetworkAddress(interface, networkAddress, debug);
-    trimInterface(interface, debug);
+    networkAddresses = calculateNetworkAddresses(interfaces, networkAddresses, interfaceCount, debug);
+    trimInterfaces(interfaces, interfaceCount, debug);
 
     struct timespec ts;
     ts.tv_sec = 0;
     ts.tv_nsec = 1;
-    while (keepRunning == 1 && fd == -1)
+    int notAllAssigned = 1;
+    while (keepRunning == 1 && notAllAssigned == 1)
     {
-        fd = open(networkAddress, O_RDWR | O_APPEND | O_CREAT, 0660);
-        if (debug == 1)
+        notAllAssigned = -1;
+        for (unsigned i = 0; i < interfaceCount; ++i)
         {
-            fprintf(stdout, "open status: %d\n", fd);
+            if (*fileDescriptors[i] != -1)
+            {
+                *fileDescriptors[i] = open(networkAddresses[i], O_RDWR | O_APPEND | O_CREAT, 0660);
+                if (debug == 1)
+                {
+                    fprintf(stdout, "open status: %d\n", *fileDescriptors[i]);
+                }
+                if (*fileDescriptors[i] == -1)
+                {
+                    notAllAssigned = 1;                
+                }
+            }
         }
-        if (fd == -1)
+        if (notAllAssigned == 1)
         {
             nanosleep(&ts, NULL);
         }
@@ -63,16 +76,27 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    ensurePcapFileHeader(fd);
+    for (unsigned i = 0; i < interfaceCount; ++i)
+    {
+        ensurePcapFileHeader(*fileDescriptors[i]);
+    }
 
     int headerSuccess = 0;
     while (keepRunning == 1 && headerSuccess == 0)
     {
+        headerSuccess = 1;
         if (debug == 1)
         {
             fprintf(stdout, "Reading pcap file header\n");
         }
-        headerSuccess = readFileHeader(fd);
+        
+        for (unsigned i = 0; i < interfaceCount; ++i)
+        {
+            if (readFileHeader(*fileDescriptors[i]) == 0)
+            {
+                headerSuccess = 0;
+            }
+        }
     }
 
     if (keepRunning == 0)
@@ -88,7 +112,8 @@ int main(int argc, char *argv[])
 
     while(keepRunning)
     {
-        readPacket(fd, interface, debug);
+        // TODO parallelize packet handling
+        //readPacket(fd, interface, debug);
         nanosleep(&ts, NULL);
     }
 
@@ -101,16 +126,73 @@ void checkOptions(const int argc, char* argv[])
 {
     if (argc != 1) // options selected - must at least specify interface
     {
+        unsigned requestedInterfaceCount = 0;
         for (int i = 1; i < argc; ++i)
         {
             if (strcmp(argv[i], "-i") == 0) // define interface
             {
-                if (interface != NULL || i + 1 >= argc) // Reset or no interface specified
+                if (i + 1 >= argc)
                 {
                     printUsage(argv[0]);
                 }
-                interface = MallocZ(sizeof(argv[i + 1] + 1)); // + 1 for null termination
-                strcpy(interface, argv[i + 1]);
+                else
+                {
+                    ++requestedInterfaceCount;
+                    ++i;
+                }
+            }
+        }
+
+        printf("MEOW");
+        fflush(stdout);
+
+        interfaces = MallocZ(requestedInterfaceCount * sizeof(char*));
+        for (unsigned i = 0; i < requestedInterfaceCount; ++i)
+        {
+            interfaces[i] = MallocZ(sizeof(char) * INET_ADDRSTRLEN);
+            interfaces[i][0] = '\0';
+        }
+
+        networkAddresses = MallocZ(requestedInterfaceCount * sizeof(char*));
+        for (unsigned i = 0; i < requestedInterfaceCount; ++i)
+        {
+            networkAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN + 4));
+            networkAddresses[i][0] = '\0';
+        }
+        
+        fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
+        printf("MEOW");
+        fflush(stdout);
+        for (int i = 0; i < requestedInterfaceCount; ++i)
+        {
+            fileDescriptors[i] = MallocZ(sizeof(int));
+            *fileDescriptors[i] = -1; // ensure assigned of not open
+        }
+        interfaceCount = requestedInterfaceCount;
+        printf("MEOW");
+        fflush(stdout);
+        unsigned currentInterfaceIndex = 0;
+
+        for (int i = 1; i < argc; ++i)
+        {
+            if (strcmp(argv[i], "-i") == 0) // define interface
+            {
+                if (i + 1 >= argc) // Reset or no interface specified
+                {
+                    printUsage(argv[0]);
+                }
+
+                for (int j = 0; i < interfaceCount; ++j)
+                {
+                    if (interfaces[j] != NULL && strcpy(argv[i + 1], interfaces[j]))
+                    {
+                        fflush(stdout);
+                        fprintf(stderr, "Reassignedment of interface: %s, exiting.", interfaces[j]);
+                        exit(66);
+                    }
+                }
+
+                strcpy(interfaces[currentInterfaceIndex++], argv[i + 1]);
                 ++i; // Skip assigned interface
             }
             else if (strcmp(argv[i], "-d") == 0) // enable debugging
@@ -136,31 +218,45 @@ void checkOptions(const int argc, char* argv[])
         printUsage(argv[0]);
     }
 
-    checkInterface(interface);
-
-    if (debug == 1)
+    for (unsigned i = 0; i < interfaceCount; ++i)
     {
-        fprintf(stdout, "debug enabled\n");
-        fprintf(stdout, "interface: %s\n", interface);
+        checkInterface(interfaces[i]);
+
+        if (debug == 1)
+        {
+            fprintf(stdout, "debug enabled\n");
+            fprintf(stdout, "interface: %s\n", interfaces[i]);
+        }
     }
 }
 
 void freeVariablesAndClose()
 {
-    if (fd != -1)
+    for (unsigned i = 0; i < interfaceCount; ++i)
     {
-        close(fd);
+        if (fileDescriptors[i] != NULL)
+        {
+            if (*fileDescriptors[i] != -1)
+            {
+                close(*fileDescriptors[i]);
+            }
+            free(fileDescriptors[i]);
+            fileDescriptors[i] = NULL;
+        }
+
+        if (interfaces[i] != NULL)
+        {
+            free(interfaces[i]);
+            interfaces[i] = NULL;
+        }
+        
+        if (networkAddresses[i] != NULL)
+        {
+            free(networkAddresses[i]);
+            networkAddresses[i] = NULL;
+        }
     }
-    if (interface != NULL)
-    {
-        free(interface);
-        interface = NULL;
-    }
-    if (networkAddress != NULL)
-    {
-        free(networkAddress);
-        networkAddress = NULL;
-    }
+
     freePacketBufferAndPayload();
 }
 

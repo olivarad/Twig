@@ -42,7 +42,7 @@ void printHelp()
     exit(0);
 }
 
-void checkInterface(const char* interface)
+void checkInterface(char* interface)
 {
     if (interface == NULL)
     {
@@ -318,57 +318,63 @@ static void calculateBroadcastAddress(int debug)
     }
 }
 
-char* calculateNetworkAddress(const char* address, char* networkAddress, int debug) 
+char** calculateNetworkAddresses(char** addresses, char** networkAddresses, const unsigned count, const int debug)
 {
-    char ipStr[INET_ADDRSTRLEN];
-    char cidrStr[3]; // CIDR is max 2 digits + null terminator
-    
-    // Extract IP address and CIDR prefix using underscore `_`
-    sscanf(address, "%[^_]_%s", ipStr, cidrStr);
-    
-    struct in_addr ipAddr, netmask, network;
-    subnetLength = atoi(cidrStr); // Convert CIDR to integer for calculations
-
-    // Convert IP address from string to binary
-    if (inet_pton(AF_INET, ipStr, &ipAddr) != 1) 
+    for (unsigned i = 0; i < count; ++i)
     {
-        fprintf(stderr, "Invalid IP address format.\n");
-        exit(1);
+        char ipStr[INET_ADDRSTRLEN];
+        char cidrStr[3]; // CIDR is max 2 digits + null terminator
+        
+        // Extract IP address and CIDR prefix using underscore `_`
+        sscanf(addresses[i], "%[^_]_%s", ipStr, cidrStr);
+        
+        struct in_addr ipAddr, netmask, network;
+        subnetLength = atoi(cidrStr); // Convert CIDR to integer for calculations
+
+        // Convert IP address from string to binary
+        if (inet_pton(AF_INET, ipStr, &ipAddr) != 1) 
+        {
+            fprintf(stderr, "Invalid IP address format.\n");
+            exit(1);
+        }
+        netAddress = ipAddr.s_addr;
+        calculateBroadcastAddress(debug);
+
+        // Compute subnet mask from CIDR
+        uint32_t mask = (subnetLength == 0) ? 0 : htonl(~((1 << (32 - subnetLength)) - 1));
+        netmask.s_addr = mask;
+
+        // Compute network address (IP & Subnet Mask)
+        network.s_addr = ipAddr.s_addr & netmask.s_addr;
+
+        // Convert network address back to string
+        char netIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &network, netIP, INET_ADDRSTRLEN);
+
+        // Write the final result into networkAddress
+        sprintf(networkAddresses[i], "%s_%s.dmp", netIP, cidrStr);
+        if (debug == 1)
+        {
+            fprintf(stdout, "Network address calculated as: %s\n", networkAddresses[i]);
+        }
     }
-    netAddress = ipAddr.s_addr;
-    calculateBroadcastAddress(debug);
 
-    // Compute subnet mask from CIDR
-    uint32_t mask = (subnetLength == 0) ? 0 : htonl(~((1 << (32 - subnetLength)) - 1));
-    netmask.s_addr = mask;
-
-    // Compute network address (IP & Subnet Mask)
-    network.s_addr = ipAddr.s_addr & netmask.s_addr;
-
-    // Convert network address back to string
-    char netIP[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &network, netIP, INET_ADDRSTRLEN);
-
-    // Write the final result into networkAddress
-    networkAddress = MallocZ(INET_ADDRSTRLEN + 4);
-    sprintf(networkAddress, "%s_%s.dmp", netIP, cidrStr);
-    if (debug == 1)
-    {
-        fprintf(stdout, "Network address calculated as: %s\n", networkAddress);
-    }
-    return networkAddress;
+    return networkAddresses;
 }
 
-void trimInterface(char* interface, int debug)
+void trimInterfaces(char** interfaces, const unsigned count, int debug)
 {
-    char* underscorePosition = strchr(interface, '_');
-    if (underscorePosition != NULL)
+    for (unsigned i = 0; i < count; ++i)
     {
-        *underscorePosition = '\0'; // Null-terminate at the underscore
-    }
-    if (debug == 1)
-    {
-        fprintf(stdout, "Interface trimmed to: %s\n", interface);
+        char* underscorePosition = strchr(interfaces[i], '_');
+        if (underscorePosition != NULL)
+        {
+            *underscorePosition = '\0'; // Null-terminate at the underscore
+        }
+        if (debug == 1)
+        {
+            fprintf(stdout, "Interface trimmed to: %s\n", interfaces[i]);
+        }
     }
 }
 

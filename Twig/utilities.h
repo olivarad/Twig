@@ -112,11 +112,11 @@ void printUsage(const char* program);
 
 void printHelp();
 
-void checkInterface(const char* interface);
+void checkInterface(char* interface);
 
-char* calculateNetworkAddress(const char *address, char* networkAddress, int debug);
+char** calculateNetworkAddresses(char** addresses, char** networkAddresses, const unsigned count, const int debug);
 
-void trimInterface(char* interface, int debug);
+void trimInterfaces(char** interfaces, const unsigned count, int debug);
 
 int readFileHeader(const int fd);
 

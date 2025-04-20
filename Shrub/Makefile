@@ -5,11 +5,11 @@ CC = gcc
 CFLAGS = -Wall -Werror -std=c11 -g -D_POSIX_C_SOURCE=199309L
 
 # Source files
-SRC = twig.c utilities.c arp.c
+SRC = shrub.c utilities.c arp.c
 OBJ = $(SRC:.c=.o)
 
 # Output executable
-TARGET = twig
+TARGET = shrub
 
 # Default target
 all: $(TARGET)

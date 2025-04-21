@@ -15,12 +15,6 @@
 
 #define EPOCH_DIFF 2208988800UL
 
-size_t maximumPacketSize = 1500;
-size_t maximumPayloadSize = 0;
-
-char* packetBuffer = NULL;
-uint8_t* payload = NULL;
-
 uint32_t netAddress;
 uint32_t broadcastAddress;
 uint8_t subnetLength;
@@ -415,8 +409,6 @@ int readFileHeader(const int fd)
         exit(1);
     }
 
-    packetBuffer = MallocZ(maximumPacketSize);
-
     return 1;
 }
 
@@ -426,11 +418,21 @@ void* readPacket(void* args)
     int fd = arguments->fd;
     char* interface = arguments->interface;
     int debug = arguments->debug;
+    size_t* maximumPacketSize = arguments->maximumPacketSize;
+    size_t* maximumPayloadSize = arguments->maximumPayloadSize;
+    char* packetBuffer = arguments->packetBuffer;
+    uint8_t* payload = arguments->payload;
 
     struct pcap_pkthdr pktHeader;
     int bytesRead = read(fd, &pktHeader, sizeof(pktHeader));
     if (bytesRead != sizeof(pktHeader))
     {
+        if (bytesRead == -1)
+        {
+            perror("read");
+            exit(66);
+        }
+
         if (bytesRead == 0)
         {
             return NULL;
@@ -445,10 +447,10 @@ void* readPacket(void* args)
         fprintf(stdout, "Packet header read: %u bytes\n", bytesRead);
     }
 
-    if (maximumPacketSize < pktHeader.caplen) // Resize needed
+    if (*maximumPacketSize < pktHeader.caplen) // Resize needed
     {
-        maximumPacketSize = pktHeader.caplen;
-        packetBuffer = ReallocZ(packetBuffer, maximumPacketSize);
+        *maximumPacketSize = pktHeader.caplen;
+        packetBuffer = ReallocZ(packetBuffer, *maximumPacketSize);
     }
 
     bytesRead = read(fd, packetBuffer, pktHeader.caplen);
@@ -519,7 +521,7 @@ void* readPacket(void* args)
                         {
                             fprintf(stdout, "ICMP checksum verified, packet accepted\n");
                         }
-                        createPacket(fd, &pktHeader, eth, iph, icmpHeader, icmp_payload, &payloadLength, debug);
+                        createPacket(fd, &pktHeader, eth, iph, icmpHeader, icmp_payload, &payloadLength, payload, maximumPayloadSize, debug);
                     }
                     else
                     {
@@ -540,7 +542,7 @@ void* readPacket(void* args)
                         {
                             fprintf(stdout, "UDP checksum verified, packet accepted\n");
                         }
-                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, debug);
+                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, debug);
                     }
                     else
                     {
@@ -579,7 +581,7 @@ void* readPacket(void* args)
     return NULL;
 }
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, const int debug)
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, const int debug)
 {
     uint32_t remainingCaptureLength = receivedPcapHeader->caplen;
 
@@ -623,12 +625,12 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                     *receivedPayloadLength = sizeof(time_t);
                     if (payload == NULL)
                     {
-                        maximumPayloadSize = *receivedPayloadLength;
+                        *maximumPayloadSize = *receivedPayloadLength;
                         payload = MallocZ(*receivedPayloadLength);
                     }
-                    else if (maximumPayloadSize < *receivedPayloadLength)
+                    else if (*maximumPayloadSize < *receivedPayloadLength)
                     {
-                        maximumPayloadSize = *receivedPayloadLength;
+                        *maximumPayloadSize = *receivedPayloadLength;
                         payload = ReallocZ(payload, *receivedPayloadLength);
                     }
                     payload = memcpy(payload, &total, *receivedPayloadLength);
@@ -842,18 +844,4 @@ void* ReallocZ(void* ptr, size_t nbytes)
     }
 
     return (ptr);
-}
-
-void freePacketBufferAndPayload()
-{
-    if (packetBuffer != NULL)
-    {
-        free(packetBuffer);
-        packetBuffer = NULL;
-    }
-    if (payload != NULL)
-    {
-        free(payload);
-        payload = NULL;
-    }
 }

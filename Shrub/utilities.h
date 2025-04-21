@@ -113,6 +113,10 @@ struct readPacketArguments
 	int fd;
 	char* interface;
 	int debug;
+	size_t* maximumPacketSize;
+	size_t* maximumPayloadSize;
+	char* packetBuffer;
+	uint8_t* payload;
 };
 
 void printUsage(const char* program);
@@ -129,7 +133,7 @@ int readFileHeader(const int fd);
 
 void* readPacket(void* args);
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, const int debug);
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, const int debug);
 
 struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader);
 
@@ -150,5 +154,3 @@ void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* et
 void* MallocZ (int nbytes);
 
 void* ReallocZ(void* ptr, size_t nbytes);
-
-void freePacketBufferAndPayload();

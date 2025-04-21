@@ -23,6 +23,7 @@ int** fileDescriptors = NULL;
 char** interfaces = NULL;
 char** networkAddresses = NULL;
 char* defaultRoute = NULL;
+struct readPacketArguments** threadArguments = NULL;
 unsigned interfaceCount = 0;
 int RIPInterval = 30;
 
@@ -74,6 +75,21 @@ int main(int argc, char *argv[])
         }
     }
 
+    threadArguments = MallocZ(sizeof(struct readPacketArguments*) * interfaceCount);
+    for (unsigned i = 0; i < interfaceCount; ++i)
+    {
+        threadArguments[i] = MallocZ (sizeof(struct readPacketArguments));
+        threadArguments[i]->fd = *fileDescriptors[i];
+        threadArguments[i]->interface = interfaces[i];
+        threadArguments[i]->debug = debug;
+        threadArguments[i]->maximumPacketSize = MallocZ(sizeof(size_t));
+        *threadArguments[i]->maximumPacketSize = 1500;
+        threadArguments[i]->maximumPayloadSize = MallocZ(sizeof(size_t));
+        *threadArguments[i]->maximumPayloadSize = 0;
+        threadArguments[i]->packetBuffer = MallocZ(1500);
+        threadArguments[i]->payload = NULL;
+    }
+
     if (keepRunning == 0)
     {
         freeVariablesAndClose();
@@ -116,19 +132,11 @@ int main(int argc, char *argv[])
 
     pthread_t threads[interfaceCount];
 
-    struct readPacketArguments threadArguments[interfaceCount];
-    for (unsigned i = 0; i < interfaceCount; ++i)
-    {
-        threadArguments[i].fd = *fileDescriptors[i];
-        threadArguments[i].interface = interfaces[i];
-        threadArguments[i].debug = debug;
-    }
-
     while(keepRunning)
     {
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
-            pthread_create(&threads[i], NULL, readPacket, &threadArguments[i]);
+            pthread_create(&threads[i], NULL, readPacket, threadArguments[i]);
         }
 
         for (unsigned i = 0; i < interfaceCount; ++i)
@@ -318,13 +326,40 @@ void freeVariablesAndClose()
         }
     }
 
+    if (threadArguments != NULL)
+    {
+        for (unsigned i = 0; i < interfaceCount; ++i)
+        {
+            if (threadArguments[i] != NULL)
+            {
+                if (threadArguments[i]->packetBuffer != NULL)
+                {
+                    free(threadArguments[i]->packetBuffer);
+                    threadArguments[i]->packetBuffer = NULL;
+                }
+                if (threadArguments[i]->maximumPacketSize != NULL)
+                {
+                    free(threadArguments[i]->maximumPacketSize);
+                    threadArguments[i]->maximumPacketSize = NULL;
+                }
+                if (threadArguments[i]->maximumPayloadSize != NULL)
+                {
+                    free(threadArguments[i]->maximumPayloadSize);
+                    threadArguments[i]->maximumPayloadSize = NULL;
+                }
+                free(threadArguments[i]);
+                threadArguments[i] = NULL;
+            }
+        }
+        free(threadArguments);
+        threadArguments = NULL;
+    }
+
     if (defaultRoute != NULL)
     {
         free(defaultRoute);
         defaultRoute = NULL;
     }
-
-    freePacketBufferAndPayload();
 }
 
 void handleSigint(int sig)

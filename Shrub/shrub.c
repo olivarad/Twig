@@ -81,6 +81,20 @@ int main(int argc, char *argv[])
         threadArguments[i] = MallocZ (sizeof(struct readPacketArguments));
         threadArguments[i]->fd = *fileDescriptors[i];
         threadArguments[i]->interface = interfaces[i];
+        
+        threadArguments[i]->mac = MallocZ(sizeof(uint8_t*) * 6);
+        for (unsigned j = 0; j < 6; ++j)
+        {
+            threadArguments[i]->mac[j] = MallocZ(1);
+        }
+        if (embedIPv4InMac(threadArguments[i]->interface, threadArguments[i]->mac) != 1)
+        {
+            fflush(stdout);
+            fprintf(stderr, "Invalid interface: %s\n", threadArguments[i]->interface);
+            freeVariablesAndClose();
+            exit(66);
+        }
+
         threadArguments[i]->debug = debug;
         threadArguments[i]->maximumPacketSize = MallocZ(sizeof(size_t));
         *threadArguments[i]->maximumPacketSize = 1500;
@@ -332,6 +346,20 @@ void freeVariablesAndClose()
         {
             if (threadArguments[i] != NULL)
             {
+                if (threadArguments[i]->mac != NULL)
+                {
+                    for (unsigned j = 0; j < 6; ++j)
+                    {
+                        if (threadArguments[i]->mac[j] != NULL)
+                        {
+                            free(threadArguments[i]->mac[j]);
+                            threadArguments[i]->mac[j] = NULL;
+                        }
+                    }
+                    free(threadArguments[i]->mac);
+                    threadArguments[i]->mac = NULL;
+                }
+
                 if (threadArguments[i]->packetBuffer != NULL)
                 {
                     free(threadArguments[i]->packetBuffer);

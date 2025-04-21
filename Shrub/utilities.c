@@ -393,6 +393,29 @@ void trimInterfaces(char** interfaces, const unsigned count, int debug)
     }
 }
 
+int embedIPv4InMac(const char* IPv4, uint8_t** mac)
+{
+    struct in_addr ipv4;
+
+    // Invalid ipv4 address
+    fflush(stdout);
+    if (inet_pton(AF_INET, IPv4, &ipv4) != 1)
+    {
+        return 0;
+    }
+    fflush(stdout);
+
+    *mac[0] = 0x5E;
+    *mac[1] = 0xFE;
+    uint8_t* ip_bytes = (uint8_t *)&ipv4;
+    *mac[2] = ip_bytes[0];
+    *mac[3] = ip_bytes[1];
+    *mac[4] = ip_bytes[2];
+    *mac[5] = ip_bytes[3];
+
+    return 1; // Success
+}
+
 int readFileHeader(const int fd)
 {
     struct pcap_file_header pfh;
@@ -417,6 +440,7 @@ void* readPacket(void* args)
     struct readPacketArguments* arguments = (struct readPacketArguments*)args;
     int fd = arguments->fd;
     char* interface = arguments->interface;
+    uint8_t** mac = arguments->mac;
     int debug = arguments->debug;
     size_t* maximumPacketSize = arguments->maximumPacketSize;
     size_t* maximumPayloadSize = arguments->maximumPayloadSize;
@@ -521,7 +545,7 @@ void* readPacket(void* args)
                         {
                             fprintf(stdout, "ICMP checksum verified, packet accepted\n");
                         }
-                        createPacket(fd, &pktHeader, eth, iph, icmpHeader, icmp_payload, &payloadLength, payload, maximumPayloadSize, debug);
+                        createPacket(fd, &pktHeader, eth, iph, icmpHeader, icmp_payload, &payloadLength, payload, maximumPayloadSize, mac, debug);
                     }
                     else
                     {
@@ -542,7 +566,7 @@ void* readPacket(void* args)
                         {
                             fprintf(stdout, "UDP checksum verified, packet accepted\n");
                         }
-                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, debug);
+                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, mac, debug);
                     }
                     else
                     {
@@ -581,13 +605,13 @@ void* readPacket(void* args)
     return NULL;
 }
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, const int debug)
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, const int debug)
 {
     uint32_t remainingCaptureLength = receivedPcapHeader->caplen;
 
     struct eth_hdr responseEthernetHeader;
 
-    responseEthernetHeader = createResponseEthernetHeader(receivedEthernetHeader);
+    responseEthernetHeader = createResponseEthernetHeader(receivedEthernetHeader, mac);
     remainingCaptureLength -= sizeof(struct eth_hdr);
 
     if (remainingCaptureLength > 0) // ipv4 header valid
@@ -680,11 +704,11 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
     }
 }
 
-struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader)
+struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t** mac)
 {
     struct eth_hdr responseHeader;
     memcpy(&responseHeader.destinationMACAddress, receivedEthernetHeader->sourceMACAddress, sizeof(responseHeader.destinationMACAddress));
-    memcpy(&responseHeader.sourceMACAddress, receivedEthernetHeader->destinationMACAddress, sizeof(responseHeader.sourceMACAddress));
+    memcpy(&responseHeader.sourceMACAddress, mac, sizeof(responseHeader.sourceMACAddress));
     responseHeader.type = receivedEthernetHeader->type;
 
     return responseHeader;

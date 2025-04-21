@@ -112,6 +112,7 @@ struct readPacketArguments
 {
 	int fd;
 	char* interface;
+	uint8_t** mac;
 	int debug;
 	size_t* maximumPacketSize;
 	size_t* maximumPayloadSize;
@@ -129,13 +130,15 @@ char** calculateNetworkAddresses(char** addresses, char** networkAddresses, cons
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
 
+int embedIPv4InMac(const char* IPv4, uint8_t** mac);
+
 int readFileHeader(const int fd);
 
 void* readPacket(void* args);
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, const int debug);
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, const int debug);
 
-struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader);
+struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t** mac);
 
 struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength, const int debug);
 

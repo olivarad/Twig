@@ -122,6 +122,11 @@ static uint16_t calculateChecksum(const struct ipv4_header* header, const int de
 
 static int verifyChecksum(const struct ipv4_header* header, const int debug) 
 {
+    if (header->headerChecksum == 0)
+    {
+        return 1;
+    }
+
     // Save the original checksum value
     uint16_t original_checksum = ntohs(header->headerChecksum);
 
@@ -183,14 +188,14 @@ static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header*
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
 
-    uint16_t retval = ((uint16_t)~checksum);
+    uint16_t retval = htonl((uint16_t)~checksum);
 
     if (debug == 1)
     {
         fprintf(stdout, "Calculated UDP Header Checksum: 0x%04X\n", retval);
     }
     
-    return htonl(retval);
+    return retval;
 }
 
 static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
@@ -243,19 +248,26 @@ static uint16_t calculateTCPChecksum(struct tcp_header* tcp, struct ipv4_header*
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
 
-    uint16_t retval = ((uint16_t)~checksum);
+    uint16_t retval = htons((uint16_t)~checksum);
 
     if (debug == 1)
     {
         fprintf(stdout, "Calculated TCP Header Checksum: 0x%04X\n", retval);
     }
     
-    return htonl(retval);
+    return (retval);
 }
 
 static int verifyTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
 {
-    return calculateTCPChecksum(tcp, ip, payload, payload_length, debug) == 0;
+    if (tcp->checksum == 0)
+    {
+        return 1;
+    }
+
+    uint16_t originalChecksum = tcp->checksum;
+
+    return calculateTCPChecksum(tcp, ip, payload, payload_length, debug) == originalChecksum;
 }
 
 static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length, const int debug) 
@@ -287,18 +299,23 @@ static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* p
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
     
-    uint16_t retval = ((uint16_t)~checksum);
+    uint16_t retval = htons((uint16_t)~checksum);
 
     if (debug == 1)
     {
         fprintf(stdout, "Calculated ICMP Header Checksum: 0x%04X\n", retval);
     }
     
-    return htonl(retval);
+    return (retval);
 }
 
 static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length, const int debug) 
 {
+    if (icmp->checkSum == 0)
+    {
+        return 1;
+    }
+
     uint16_t original_checksum = icmp->checkSum;
     icmp->checkSum = 0; // Set to zero for correct calculation
 
@@ -309,7 +326,7 @@ static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, 
     icmp->checkSum = original_checksum;
 
     // Check if the calculated checksum matches the original
-    return (computed_checksum == 0);
+    return (computed_checksum == original_checksum);
 }
 
 static void calculateBroadcastAddress(int debug)

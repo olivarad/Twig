@@ -126,7 +126,7 @@ void printHelp();
 
 void checkInterface(char* interface);
 
-char** calculateNetworkAddresses(char** addresses, char** networkAddresses, const unsigned count, const int debug);
+char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, char** broadcastAddresses, const unsigned count, const int debug);
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
 

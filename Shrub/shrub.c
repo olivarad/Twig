@@ -22,6 +22,8 @@ unsigned debug = 0;
 int** fileDescriptors = NULL;
 char** interfaces = NULL;
 char** networkAddresses = NULL;
+char** broadcastAddresses = NULL;
+uint8_t* subnetLengths = NULL;
 char* defaultRoute = NULL;
 struct readPacketArguments** threadArguments = NULL;
 unsigned interfaceCount = 0;
@@ -44,7 +46,7 @@ int main(int argc, char *argv[])
 
     checkOptions(argc, argv);
 
-    networkAddresses = calculateNetworkAddresses(interfaces, networkAddresses, interfaceCount, debug);
+    networkAddresses = calculateNetworkAndBroadcastAddresses(interfaces, networkAddresses, broadcastAddresses, interfaceCount, debug);
     trimInterfaces(interfaces, interfaceCount, debug);
 
     struct timespec ts;
@@ -59,9 +61,9 @@ int main(int argc, char *argv[])
             if (*fileDescriptors[i] == -1)
             {
                 *fileDescriptors[i] = open(networkAddresses[i], O_RDWR | O_APPEND | O_CREAT, 0660);
-                if (debug == 1)
+                if (debug > 0)
                 {
-                    fprintf(stdout, "open status: %d\n", *fileDescriptors[i]);
+                    fprintf(stdout, "open status: %d for network address %s\n", *fileDescriptors[i], networkAddresses[i]);
                 }
                 if (*fileDescriptors[i] == -1)
                 {
@@ -115,33 +117,32 @@ int main(int argc, char *argv[])
         ensurePcapFileHeader(*fileDescriptors[i]);
     }
 
+    int successes[interfaceCount];
+    for (unsigned i = 0; i < interfaceCount; ++i)
+    successes[i] = 0;
     int headerSuccess = 0;
-    while (keepRunning == 1 && headerSuccess == 0)
+    
+    do
     {
         headerSuccess = 1;
-        if (debug == 1)
-        {
-            //fprintf(stdout, "Reading pcap file header\n");
-        }
         
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
-            if (readFileHeader(*fileDescriptors[i]) == 0)
+            if (successes[i] == 0 && readFileHeader(*fileDescriptors[i]) == 0)
             {
                 headerSuccess = 0;
             }
+            else
+            {
+                successes[i] = 1;
+            }
         }
-    }
+    } while (keepRunning == 1 && headerSuccess == 0);
 
     if (keepRunning == 0)
     {
         freeVariablesAndClose();
         exit(0);
-    }
-
-    if (debug == 1)
-    {
-        fprintf(stdout, "Pcap file header read\n");
     }
 
     pthread_t threads[interfaceCount];
@@ -199,6 +200,15 @@ void checkOptions(const int argc, char* argv[])
             networkAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN + 4));
             networkAddresses[i][0] = '\0';
         }
+
+        broadcastAddresses = MallocZ(requestedInterfaceCount * sizeof(char*));
+        for (unsigned i = 0; i < requestedInterfaceCount; ++i)
+        {
+            broadcastAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN));
+            broadcastAddresses[i][0] = '\0';
+        }
+
+        subnetLengths = MallocZ(requestedInterfaceCount * sizeof(uint8_t));
         
         fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
         for (int i = 0; i < requestedInterfaceCount; ++i)
@@ -300,21 +310,21 @@ void checkOptions(const int argc, char* argv[])
         printUsage(argv[0]);
     }
 
-    if (debug != 0)
+    if (debug > 0)
     {
         fprintf(stdout, "debug level %u enabled\n", debug);
         fprintf(stdout, "enabled debug options:\n");
         if (debug >= 1)
         {
-            fprintf(stdout, "\tRouting table changes will print entire routing table\n");
+            fprintf(stdout, "\t-Routing table changes will print entire routing table\n");
         }
         if (debug >= 2)
         {
-            fprintf(stdout, "\tTTL expired messages enabled\n");
+            fprintf(stdout, "\t-TTL expired messages enabled\n");
         }
         if (debug >= 3)
         {
-            fprintf(stdout, "\tUDP echo response generation status messages enabled\n");
+            fprintf(stdout, "\t-UDP echo response generation status messages enabled\n");
         }
     }
 
@@ -357,6 +367,37 @@ void freeVariablesAndClose()
             free(networkAddresses[i]);
             networkAddresses[i] = NULL;
         }
+
+        if (broadcastAddresses[i] != NULL)
+        {
+            free(broadcastAddresses[i]);
+            broadcastAddresses[i] = NULL;
+        }
+    }
+
+    if (fileDescriptors != NULL)
+    {
+        fileDescriptors = NULL;
+    }
+
+    if (interfaces != NULL)
+    {
+        interfaces = NULL;
+    }
+
+    if (networkAddresses != NULL)
+    {
+        networkAddresses = NULL;
+    }
+
+    if (broadcastAddresses != NULL)
+    {
+        broadcastAddresses = NULL;
+    }
+
+    if (subnetLengths != NULL)
+    {
+        subnetLengths = NULL;
     }
 
     if (threadArguments != NULL)
@@ -446,11 +487,11 @@ void ensurePcapFileHeader(int fd)
         }
     }
     lseek(fd, 0, SEEK_SET);
-    if (debug == 1)
+    if (debug > 0)
     {
         uint8_t check[24];
         read(fd, check, sizeof(check));
-            fprintf(stdout, "PCAP file header:\n");
+            fprintf(stdout, "PCAP file header for fd %d:\n\t", fd);
         for (int i = 0; i < 24; i++) 
         {
             fprintf(stdout, "%02x ", check[i]);

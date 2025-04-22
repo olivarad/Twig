@@ -333,7 +333,7 @@ static void calculateBroadcastAddress(int debug)
     }
 }
 
-char** calculateNetworkAddresses(char** addresses, char** networkAddresses, const unsigned count, const int debug)
+char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, char** broadcastAddresses, const unsigned count, const int debug)
 {
     for (unsigned i = 0; i < count; ++i)
     {
@@ -352,7 +352,7 @@ char** calculateNetworkAddresses(char** addresses, char** networkAddresses, cons
             fprintf(stderr, "Invalid IP address format.\n");
             exit(1);
         }
-        netAddress = ipAddr.s_addr;
+        *networkAddresses[i] = ipAddr.s_addr;
         calculateBroadcastAddress(debug);
 
         // Compute subnet mask from CIDR

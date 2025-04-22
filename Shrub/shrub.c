@@ -217,19 +217,22 @@ void checkOptions(const int argc, char* argv[])
                 {
                     printUsage(argv[0]);
                 }
-
-                for (int j = 0; i < interfaceCount; ++j)
+                else
                 {
-                    if (interfaces[j] != NULL && strcpy(argv[i + 1], interfaces[j]))
+                    for (int j = 0; j < interfaceCount; ++j)
                     {
-                        fflush(stdout);
-                        fprintf(stderr, "Reassignment of interface: %s, exiting.", interfaces[j]);
-                        exit(66);
+                        if (interfaces[j] != NULL && strcmp(argv[i + 1], interfaces[j]) == 0)
+                        {
+                            fflush(stdout);
+                            fprintf(stderr, "Reassignment of interface: %s, exiting.", interfaces[j]);
+                            exit(66);
+                        }
                     }
                 }
 
                 strcpy(interfaces[currentInterfaceIndex++], argv[i + 1]);
                 ++i; // Skip assigned interface
+                continue;
             }
             else if (strcmp(argv[i], "-d") == 0) // enable debugging
             {

@@ -15,10 +15,6 @@
 
 #define EPOCH_DIFF 2208988800UL
 
-uint32_t netAddress;
-uint32_t broadcastAddress;
-uint8_t subnetLength;
-
 void printUsage(const char* program)
 {
     fflush(stdout);
@@ -87,7 +83,7 @@ static uint16_t calculateChecksum(const struct ipv4_header* header, const int de
             word = (byte_ptr[i] << 8) | byte_ptr[i + 1];
         } else 
         {
-            // If there's an odd number of bytes, take the last byte and zero the second byte
+            // If there's an odd number of bytes, take the uint32_t netAddress;last byte and zero the second byte
             word = byte_ptr[i] << 8;
         }
 
@@ -323,18 +319,24 @@ static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, 
     return (computed_checksum == original_checksum);
 }
 
-static void calculateBroadcastAddress(int debug)
+static uint32_t calculateBroadcastAddress(uint32_t netAddress, char* ipStr, uint8_t subnetLength, int debug)
 {
     uint32_t host_bits = (1 << (32 - subnetLength)) - 1;
-    broadcastAddress = netAddress | htonl(host_bits);
-    if (debug == 1)
+    uint32_t broadcastAddress = netAddress | htonl(host_bits);
+    if (debug > 0)
     {
-        fprintf(stdout, "Broadcast address calculated as %s\n", inet_ntoa(*(struct in_addr *)&broadcastAddress));
+        fprintf(stdout, "Broadcast address for interface %s calculated as %s\n", ipStr, inet_ntoa(*(struct in_addr *)&broadcastAddress));
     }
+
+    return broadcastAddress;
 }
 
-char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, char** broadcastAddresses, const unsigned count, const int debug)
+char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, const unsigned count, const int debug)
 {
+
+    uint32_t netAddress;
+    uint8_t subnetLength;
+
     for (unsigned i = 0; i < count; ++i)
     {
         char ipStr[INET_ADDRSTRLEN];
@@ -352,8 +354,8 @@ char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAdd
             fprintf(stderr, "Invalid IP address format.\n");
             exit(1);
         }
-        *networkAddresses[i] = ipAddr.s_addr;
-        calculateBroadcastAddress(debug);
+        netAddress = ipAddr.s_addr;
+        broadcastAddresses[i] = calculateBroadcastAddress(netAddress, ipStr, subnetLength, debug);
 
         // Compute subnet mask from CIDR
         uint32_t mask = (subnetLength == 0) ? 0 : htonl(~((1 << (32 - subnetLength)) - 1));
@@ -368,9 +370,9 @@ char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAdd
 
         // Write the final result into networkAddress
         sprintf(networkAddresses[i], "%s_%s.dmp", netIP, cidrStr);
-        if (debug == 1)
+        if (debug > 0)
         {
-            fprintf(stdout, "Network address calculated as: %s\n", networkAddresses[i]);
+            fprintf(stdout, "Network address for interface %s calculated as: %s\n\n", ipStr, networkAddresses[i]);
         }
     }
 
@@ -440,6 +442,7 @@ void* readPacket(void* args)
     struct readPacketArguments* arguments = (struct readPacketArguments*)args;
     int fd = arguments->fd;
     char* interface = arguments->interface;
+    uint32_t broadcastAddress = arguments->broadcastAddress;
     uint8_t** mac = arguments->mac;
     int debug = arguments->debug;
     size_t* maximumPacketSize = arguments->maximumPacketSize;

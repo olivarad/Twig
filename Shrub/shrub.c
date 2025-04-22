@@ -22,8 +22,7 @@ unsigned debug = 0;
 int** fileDescriptors = NULL;
 char** interfaces = NULL;
 char** networkAddresses = NULL;
-char** broadcastAddresses = NULL;
-uint8_t* subnetLengths = NULL;
+uint32_t* broadcastAddresses = NULL;
 char* defaultRoute = NULL;
 struct readPacketArguments** threadArguments = NULL;
 unsigned interfaceCount = 0;
@@ -77,12 +76,18 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (debug > 0)
+    {
+        fprintf(stdout, "\n");
+    }
+
     threadArguments = MallocZ(sizeof(struct readPacketArguments*) * interfaceCount);
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
         threadArguments[i] = MallocZ (sizeof(struct readPacketArguments));
         threadArguments[i]->fd = *fileDescriptors[i];
         threadArguments[i]->interface = interfaces[i];
+        threadArguments[i]->broadcastAddress = broadcastAddresses[i];
         
         threadArguments[i]->mac = MallocZ(sizeof(uint8_t*) * 6);
         for (unsigned j = 0; j < 6; ++j)
@@ -115,6 +120,11 @@ int main(int argc, char *argv[])
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
         ensurePcapFileHeader(*fileDescriptors[i]);
+    }
+
+    if (debug > 0)
+    {
+        fprintf(stdout, "\n");
     }
 
     int successes[interfaceCount];
@@ -201,14 +211,7 @@ void checkOptions(const int argc, char* argv[])
             networkAddresses[i][0] = '\0';
         }
 
-        broadcastAddresses = MallocZ(requestedInterfaceCount * sizeof(char*));
-        for (unsigned i = 0; i < requestedInterfaceCount; ++i)
-        {
-            broadcastAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN));
-            broadcastAddresses[i][0] = '\0';
-        }
-
-        subnetLengths = MallocZ(requestedInterfaceCount * sizeof(uint8_t));
+        broadcastAddresses = MallocZ(requestedInterfaceCount * sizeof(uint32_t));
         
         fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
         for (int i = 0; i < requestedInterfaceCount; ++i)
@@ -329,7 +332,7 @@ void checkOptions(const int argc, char* argv[])
     }
 
     if (debug > 0)
-    fprintf(stdout, "Interfaces:\n");
+    fprintf(stdout, "\nInterfaces:\n");
 
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
@@ -339,6 +342,10 @@ void checkOptions(const int argc, char* argv[])
         {
             fprintf(stdout, "\t%s\n", interfaces[i]);
         }
+    }
+    if (debug > 0)
+    {
+        fprintf(stdout, "\n");
     }
 }
 
@@ -367,38 +374,12 @@ void freeVariablesAndClose()
             free(networkAddresses[i]);
             networkAddresses[i] = NULL;
         }
-
-        if (broadcastAddresses[i] != NULL)
-        {
-            free(broadcastAddresses[i]);
-            broadcastAddresses[i] = NULL;
-        }
     }
 
-    if (fileDescriptors != NULL)
-    {
-        fileDescriptors = NULL;
-    }
-
-    if (interfaces != NULL)
-    {
-        interfaces = NULL;
-    }
-
-    if (networkAddresses != NULL)
-    {
-        networkAddresses = NULL;
-    }
-
-    if (broadcastAddresses != NULL)
-    {
-        broadcastAddresses = NULL;
-    }
-
-    if (subnetLengths != NULL)
-    {
-        subnetLengths = NULL;
-    }
+    fileDescriptors = NULL;
+    interfaces = NULL;
+    networkAddresses = NULL;
+    broadcastAddresses = NULL;
 
     if (threadArguments != NULL)
     {

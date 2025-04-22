@@ -112,6 +112,7 @@ struct readPacketArguments
 {
 	int fd;
 	char* interface;
+	uint32_t broadcastAddress;
 	uint8_t** mac;
 	int debug;
 	size_t* maximumPacketSize;
@@ -126,7 +127,7 @@ void printHelp();
 
 void checkInterface(char* interface);
 
-char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, char** broadcastAddresses, const unsigned count, const int debug);
+char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, const unsigned count, const int debug);
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
 

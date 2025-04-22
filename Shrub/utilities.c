@@ -708,7 +708,10 @@ struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHead
 {
     struct eth_hdr responseHeader;
     memcpy(&responseHeader.destinationMACAddress, receivedEthernetHeader->sourceMACAddress, sizeof(responseHeader.destinationMACAddress));
-    memcpy(&responseHeader.sourceMACAddress, mac, sizeof(responseHeader.sourceMACAddress));
+    for (unsigned i = 0; i < 6; ++i)
+    {
+        responseHeader.sourceMACAddress[i] = *mac[i];
+    }
     responseHeader.type = receivedEthernetHeader->type;
 
     return responseHeader;

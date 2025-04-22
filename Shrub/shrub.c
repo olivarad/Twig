@@ -17,7 +17,7 @@
 
 volatile sig_atomic_t keepRunning = 1;
 
-int debug = 0;
+unsigned debug = 0;
 
 int** fileDescriptors = NULL;
 char** interfaces = NULL;
@@ -234,13 +234,9 @@ void checkOptions(const int argc, char* argv[])
                 ++i; // Skip assigned interface
                 continue;
             }
-            else if (strcmp(argv[i], "-d") == 0) // enable debugging
+            else if (strcmp(argv[i], "-d") == 0) // increment debug level
             {
-                if (debug == 1) // Cannot set multiple times
-                {
-                    printUsage(argv[0]);
-                }
-                debug = 1;
+                ++debug;
             }
             else if (strcmp(argv[i], "-h") == 0) // help
             {
@@ -304,14 +300,34 @@ void checkOptions(const int argc, char* argv[])
         printUsage(argv[0]);
     }
 
+    if (debug != 0)
+    {
+        fprintf(stdout, "debug level %u enabled\n", debug);
+        fprintf(stdout, "enabled debug options:\n");
+        if (debug >= 1)
+        {
+            fprintf(stdout, "\tRouting table changes will print entire routing table\n");
+        }
+        if (debug >= 2)
+        {
+            fprintf(stdout, "\tTTL expired messages enabled\n");
+        }
+        if (debug >= 3)
+        {
+            fprintf(stdout, "\tUDP echo response generation status messages enabled\n");
+        }
+    }
+
+    if (debug > 0)
+    fprintf(stdout, "Interfaces:\n");
+
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
         checkInterface(interfaces[i]);
 
-        if (debug == 1)
+        if (debug > 0)
         {
-            fprintf(stdout, "debug enabled\n");
-            fprintf(stdout, "interface: %s\n", interfaces[i]);
+            fprintf(stdout, "\t%s\n", interfaces[i]);
         }
     }
 }

@@ -46,20 +46,21 @@ void checkInterface(char* interface)
     }
 }
 
-static void printIPv4Header(const struct ipv4_header* header) 
+static void printIPv4Header(const struct ipv4_header* header, char* interface) 
 {
-    fprintf(stdout, "IPv4 Header:\n");
-    fprintf(stdout, "Version: %u\n", header->versionAndHeaderLength >> 4);
-    fprintf(stdout, "Header Length: %u bytes\n", (header->versionAndHeaderLength & 0x0F) * 4);
-    fprintf(stdout, "Type of Service: 0x%02X\n", header->typeOfService);
-    fprintf(stdout, "Total Length: %u\n", ntohs(header->totalLength));
-    fprintf(stdout, "Identification: %u\n", ntohs(header->identification));
-    fprintf(stdout, "Frag Offset: %u\n", (ntohs(header->flagsAndFragmentOffset) & 0x1FFF) * 8);
-    fprintf(stdout, "Frag DF: %s\n", (ntohs(header->flagsAndFragmentOffset) & 0x4000) >> 14 ? "yes" : "no");
-    fprintf(stdout, "Frag MF: %s\n", (ntohs(header->flagsAndFragmentOffset) & 0x2000) >> 13 ? "yes" : "no");    
-    fprintf(stdout, "Time to Live: %u\n", header->timeToLive);
-    fprintf(stdout, "Protocol: %u\n", header->protocol);
-    fprintf(stdout, "Header Checksum: 0x%04X\n", header->headerChecksum);
+    fprintf(stdout, "Interface %s\n", interface);
+    fprintf(stdout, "\tIPv4 Header:\n");
+    fprintf(stdout, "\tVersion: %u\n", header->versionAndHeaderLength >> 4);
+    fprintf(stdout, "\tHeader Length: %u bytes\n", (header->versionAndHeaderLength & 0x0F) * 4);
+    fprintf(stdout, "\tType of Service: 0x%02X\n", header->typeOfService);
+    fprintf(stdout, "\tTotal Length: %u\n", ntohs(header->totalLength));
+    fprintf(stdout, "\tIdentification: %u\n", ntohs(header->identification));
+    fprintf(stdout, "\tFrag Offset: %u\n", (ntohs(header->flagsAndFragmentOffset) & 0x1FFF) * 8);
+    fprintf(stdout, "\tFrag DF: %s\n", (ntohs(header->flagsAndFragmentOffset) & 0x4000) >> 14 ? "yes" : "no");
+    fprintf(stdout, "\tFrag MF: %s\n", (ntohs(header->flagsAndFragmentOffset) & 0x2000) >> 13 ? "yes" : "no");    
+    fprintf(stdout, "\tTime to Live: %u\n", header->timeToLive);
+    fprintf(stdout, "\tProtocol: %u\n", header->protocol);
+    fprintf(stdout, "\tHeader Checksum: 0x%04X\n", header->headerChecksum);
     struct in_addr src, dst;
     src.s_addr = header->sourceIP;
     dst.s_addr = header->destinationIP;
@@ -67,7 +68,7 @@ static void printIPv4Header(const struct ipv4_header* header)
     fprintf(stdout, "Destination IP: %s\n", inet_ntoa(dst));
 }
 
-static uint16_t calculateChecksum(const struct ipv4_header* header, const int debug) 
+static uint16_t calculateChecksum(const struct ipv4_header* header, char* interface, const int debug) 
 {
     uint32_t checksum = 0;
     const uint8_t* byte_ptr = (const uint8_t*)header;
@@ -101,16 +102,17 @@ static uint16_t calculateChecksum(const struct ipv4_header* header, const int de
     checksum = ~checksum & 0xFFFF;
 
     uint16_t retval = (uint16_t) checksum;
+    retval = htons(retval);
 
-    if (debug == 1)
+    if (debug > 0)
     {
-        fprintf(stdout, "Calculated IPv4 Header Checksum: 0x%04X\n", retval);
+        fprintf(stdout, "interface %s, Calculated IPv4 Header Checksum: 0x%04X\n", interface, retval);
     }
 
     return retval;
 }
 
-static int verifyChecksum(const struct ipv4_header* header, const int debug) 
+static int verifyChecksum(const struct ipv4_header* header, char* interface, const int debug) 
 {
     if (header->headerChecksum == 0)
     {
@@ -118,13 +120,13 @@ static int verifyChecksum(const struct ipv4_header* header, const int debug)
     }
 
     // Save the original checksum value
-    uint16_t original_checksum = ntohs(header->headerChecksum);
+    uint16_t original_checksum = header->headerChecksum;
 
     // Set the checksum field to 0 to compute the checksum
     ((struct ipv4_header*)header)->headerChecksum = 0;
 
     // Compute the checksum
-    uint16_t computed_checksum = calculateChecksum(header, debug);
+    uint16_t computed_checksum = calculateChecksum(header, interface, debug);
 
     // Restore the original checksum
     ((struct ipv4_header*)header)->headerChecksum = original_checksum;
@@ -133,7 +135,7 @@ static int verifyChecksum(const struct ipv4_header* header, const int debug)
     return (computed_checksum == original_checksum);
 }
 
-static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
+static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, char* interface, const int debug) 
 {
 
     struct udp_pseudo_header pseudo_hdr;
@@ -180,87 +182,20 @@ static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header*
 
     uint16_t retval = htonl((uint16_t)~checksum);
 
-    if (debug == 1)
+    if (debug > 0)
     {
-        fprintf(stdout, "Calculated UDP Header Checksum: 0x%04X\n", retval);
+        fprintf(stdout, "interface %s, Calculated UDP Header Checksum: 0x%04X\n", interface, retval);
     }
     
     return retval;
 }
 
-static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
+static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, char* interface, const int debug) 
 {
-    return calculateUDPChecksum(udp, ip, payload, payload_length, debug) == 0;
+    return calculateUDPChecksum(udp, ip, payload, payload_length, interface, debug) == 0;
 }
 
-static uint16_t calculateTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
-{
-
-    struct tcp_pseudo_header pseudo_hdr;
-    pseudo_hdr.source_ip = ip->sourceIP;
-    pseudo_hdr.dest_ip = ip->destinationIP;
-    pseudo_hdr.reserved = 0;
-    pseudo_hdr.protocol = IPPROTO_TCP;
-    pseudo_hdr.tcp_length = ip->totalLength - ((ip->versionAndHeaderLength & 0x0F) * 4);
-    
-    uint32_t checksum = 0;
-    
-    // Add pseudo-header
-    uint16_t *ptr = (uint16_t *)&pseudo_hdr;
-    for (size_t i = 0; i < sizeof(pseudo_hdr) / 2; i++) 
-    {
-        checksum += ntohs(ptr[i]);
-    }
-    
-    // Add TCP header
-    ptr = (uint16_t *)tcp;
-    for (size_t i = 0; i < sizeof(struct tcp_header) / 2; i++) 
-    {
-        checksum += ntohs(ptr[i]);
-    }
-    
-    // Add payload
-    ptr = (uint16_t *)payload;
-    *payload_length = pseudo_hdr.tcp_length - ((tcp->dataOffset >> 4) * 4);
-    for (size_t i = 0; i < *payload_length / 2; i++) 
-    {
-        checksum += ntohs(ptr[i]);
-    }
-    
-    if (*payload_length % 2) 
-    {
-        checksum += payload[*payload_length - 1] << 8;
-    }
-    
-    // Handle overflow
-    while (checksum >> 16) 
-    {
-        checksum = (checksum & 0xFFFF) + (checksum >> 16);
-    }
-
-    uint16_t retval = htons((uint16_t)~checksum);
-
-    if (debug == 1)
-    {
-        fprintf(stdout, "Calculated TCP Header Checksum: 0x%04X\n", retval);
-    }
-    
-    return (retval);
-}
-
-static int verifyTCPChecksum(struct tcp_header* tcp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, const int debug) 
-{
-    if (tcp->checksum == 0)
-    {
-        return 1;
-    }
-
-    uint16_t originalChecksum = tcp->checksum;
-
-    return calculateTCPChecksum(tcp, ip, payload, payload_length, debug) == originalChecksum;
-}
-
-static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length, const int debug) 
+static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length, char* interface, const int debug) 
 {
     uint32_t checksum = 0;
     
@@ -291,15 +226,15 @@ static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* p
     
     uint16_t retval = htons((uint16_t)~checksum);
 
-    if (debug == 1)
+    if (debug > 0)
     {
-        fprintf(stdout, "Calculated ICMP Header Checksum: 0x%04X\n", retval);
+        fprintf(stdout, "interface %s, Calculated ICMP Header Checksum: 0x%04X\n", interface, retval);
     }
     
     return (retval);
 }
 
-static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length, const int debug) 
+static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t payload_length, char* interface, const int debug) 
 {
     if (icmp->checkSum == 0)
     {
@@ -310,7 +245,7 @@ static int verifyICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, 
     icmp->checkSum = 0; // Set to zero for correct calculation
 
     // Compute the checksum over the ICMP header and payload
-    uint16_t computed_checksum = calculateICMPChecksum(icmp, payload, &payload_length, debug);
+    uint16_t computed_checksum = calculateICMPChecksum(icmp, payload, &payload_length, interface, debug);
 
     // Restore the original checksum
     icmp->checkSum = original_checksum;
@@ -388,7 +323,7 @@ void trimInterfaces(char** interfaces, const unsigned count, int debug)
         {
             *underscorePosition = '\0'; // Null-terminate at the underscore
         }
-        if (debug == 1)
+        if (debug > 0)
         {
             fprintf(stdout, "Interface trimmed to: %s\n", interfaces[i]);
         }
@@ -465,13 +400,13 @@ void* readPacket(void* args)
             return NULL;
         }
         fflush(stdout);
-        fprintf(stderr, "Skipping truncated packet header: only %u bytes read\n", bytesRead);
+        fprintf(stderr, "interface %s, Skipping truncated packet header: only %u bytes read\n", interface, bytesRead);
         return NULL;
     }
     
-    if (debug == 1)
+    if (debug > 1)
     {
-        fprintf(stdout, "Packet header read: %u bytes\n", bytesRead);
+        fprintf(stdout, "interface %s, Packet header read: %u bytes\n", interface, bytesRead);
     }
 
     if (*maximumPacketSize < pktHeader.caplen) // Resize needed
@@ -484,41 +419,49 @@ void* readPacket(void* args)
     if (bytesRead != pktHeader.caplen)
     {
         fflush(stdout);
-        fprintf(stdout, "Skipping  truncated packet: only %u bytes read\n", bytesRead);
+        fprintf(stderr, "interface %s, Skipping  truncated packet: only %u bytes read\n", interface, bytesRead);
         return NULL;
     }
 
     struct eth_hdr* eth = (struct eth_hdr*) packetBuffer;
-    if (debug == 1)
+    if (debug > 1)
     {
-        fprintf(stdout, "Ethernet header found, type: 0x%04x\n", ntohs(eth->type));
+        fprintf(stdout, "interface %s, Ethernet header found, type: 0x%04x\n", interface, ntohs(eth->type));
     }
 
     if (ntohs(eth->type) == ETHERTYPE_ARP)
     {
-        fprintf(stdout, "Ethernet protocol: ARP\n");
+        if (debug > 1)
+        {
+            fprintf(stdout, "interface %s, Ethernet protocol: ARP\n", interface);
+        }
+        
     }
     else if (ntohs(eth->type) == ETHERTYPE_IP)
     {
-        fprintf(stdout, "Ethernet protocol: IP\n");
+        if (debug > 1)
+        {
+            fprintf(stdout, "interface %s, Ethernet protocol: IP\n", interface);
+        }
+        
 
         struct ipv4_header* iph = (struct ipv4_header*) (packetBuffer + sizeof(struct eth_hdr));
     
-        if (verifyChecksum(iph, debug) == 0)
+        if (verifyChecksum(iph, interface, debug) == 0)
         {
-            if (debug == 1)
+            if (debug > 1)
             {
                 fflush(stdout);
-                fprintf(stderr, "Header checksum invalid, rejecting packet\n");
+                fprintf(stderr, "interface %s, Header checksum invalid, rejecting packet\n", interface);
             }
             return NULL;
         }
 
         addArpEntry(iph->sourceIP, eth->sourceMACAddress);
 
-        if (debug == 1)
+        if (debug > 1)
         {
-            printIPv4Header(iph);
+            printIPv4Header(iph, interface);
         } 
         
         char destination[INET_ADDRSTRLEN];
@@ -526,9 +469,9 @@ void* readPacket(void* args)
 
         if (strcmp(destination, interface) == 0 || iph->destinationIP == broadcastAddress)
         {
-            if (debug == 1)
+            if (debug > 1)
             {
-                fprintf(stdout, "Packet found for me\n");
+                fprintf(stdout, "Packet found for interface %s\n", interface);
             }
 
             size_t payloadLength;
@@ -536,71 +479,60 @@ void* readPacket(void* args)
             switch (iph->protocol)
             {
                 case IPPROTO_ICMP:
-                    fprintf(stdout, "IP protocol: ICMP\n");
+                    if (debug > 0)
+                    {
+                        fprintf(stdout, "interface %s, IP protocol: ICMP\n", interface);
+                    }
                     struct icmp_header* icmpHeader = (struct icmp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint16_t headerLength = (iph->versionAndHeaderLength & 0X0F) * 4;
                     payloadLength = ntohs(iph->totalLength) - headerLength - sizeof(struct icmp_header);
                     uint8_t* icmp_payload = (uint8_t*)(icmpHeader + 1); // Payload starts after the ICMP header
 
-                    if (verifyICMPChecksum(icmpHeader, icmp_payload, payloadLength, debug))
+                    if (verifyICMPChecksum(icmpHeader, icmp_payload, payloadLength, interface, debug))
                     {
-                        if (debug == 1)
+                        if (debug > 0)
                         {
-                            fprintf(stdout, "ICMP checksum verified, packet accepted\n");
+                            fprintf(stdout, "interface %s, ICMP checksum verified, packet accepted\n", interface);
                         }
-                        createPacket(fd, &pktHeader, eth, iph, icmpHeader, icmp_payload, &payloadLength, payload, maximumPayloadSize, mac, debug);
+                        createPacket(fd, &pktHeader, eth, iph, icmpHeader, icmp_payload, &payloadLength, payload, maximumPayloadSize, mac, interface, debug);
                     }
                     else
                     {
-                        if (debug == 1)
+                        if (debug > 1)
                         {
-                            fprintf(stdout, "ICMP checksum rejected, packet rejected\n");
+                            fprintf(stdout, "interface %s, ICMP checksum rejected, packet rejected\n", interface);
                         }
                     } 
                     break;
                 case IPPROTO_UDP:
-                    fprintf(stdout, "IP protocol: UDP\n");
+                    if (debug > 0)
+                    {
+                        fprintf(stdout, "interface %s, IP protocol: UDP\n", interface);
+                    }
                     struct udp_header* udpHeader = (struct udp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint8_t* udpPayload = (uint8_t*)(udpHeader + 1);
 
-                    if (verifyUDPChecksum(udpHeader, iph, udpPayload, &payloadLength, debug))
+                    if (verifyUDPChecksum(udpHeader, iph, udpPayload, &payloadLength, interface, debug))
                     {
-                        if (debug == 1)
+                        if (debug > 0)
                         {
-                            fprintf(stdout, "UDP checksum verified, packet accepted\n");
+                            fprintf(stdout, "interface %s, UDP checksum verified, packet accepted\n", interface);
                         }
-                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, mac, debug);
+                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, mac, interface, debug);
                     }
                     else
                     {
-                        if (debug == 1)
+                        if (debug > 0)
                         {
-                            fprintf(stdout, "UDP checksum rejected, packet rejected\n");
-                        }
-                    }
-                    break;
-                case IPPROTO_TCP:
-                    fprintf(stdout, "IP protocol: TCP\n");
-                    struct tcp_header* tcpHeader = (struct tcp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
-                    uint8_t* tcpPayload = (uint8_t*)(tcpHeader + 1);
-
-                    if (verifyTCPChecksum(tcpHeader, iph, tcpPayload, &payloadLength, debug))
-                    {
-                        if (debug == 1)
-                        {
-                            fprintf(stdout, "TCP checksum verified, packet accepted\n");
-                        }
-                    }
-                    else
-                    {
-                        if (debug == 1)
-                        {
-                            fprintf(stdout, "TCP checksum rejected, packet rejected\n");
+                            fprintf(stdout, "interface %s, UDP checksum rejected, packet rejected\n", interface);
                         }
                     }
                     break;
                 default:
-                    fprintf(stdout, "IP protocol: Unknown (%d)\n", iph->protocol);
+                    if (debug > 0)
+                    {
+                        fprintf(stdout, "interface %s, IP protocol: Unknown (%d)\n", interface, iph->protocol);
+                    }
                     break;
             }
         }
@@ -608,8 +540,9 @@ void* readPacket(void* args)
     return NULL;
 }
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, const int debug)
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, char* interface, const int debug)
 {
+
     uint32_t remainingCaptureLength = receivedPcapHeader->caplen;
 
     struct eth_hdr responseEthernetHeader;
@@ -622,22 +555,22 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
         switch (receivedIPHeader->protocol)
         {
             case IPPROTO_ICMP:
-                if (debug == 1)
+                if (debug > 0)
                 {
-                    fprintf(stdout, "Creating response for ICMP packet\n");
+                    fprintf(stdout, "interface %s, Creating response for ICMP packet\n", interface);
                 }
 
-                struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, debug);
-                struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader, receivedPayloadLength, debug);
+                struct icmp_header responseICMPProtocolHeader = createResponseICMPHeader((struct icmp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, interface, debug);
+                struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader, receivedPayloadLength, interface, debug);
 
                 struct pcap_pkthdr responsePcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
-                sendPacket(fd, &responsePcapHeader, &responseEthernetHeader, &responseIPv4Header, &responseICMPProtocolHeader, receivedPayload, receivedPayloadLength);
+                sendPacket(fd, &responsePcapHeader, &responseEthernetHeader, &responseIPv4Header, &responseICMPProtocolHeader, receivedPayload, receivedPayloadLength, interface, debug);
                 break;
             
             case IPPROTO_UDP:
-                if (debug == 1)
+                if (debug > 0)
                 {
-                    fprintf(stdout, "Creating response for UDP packet\n");
+                    fprintf(stdout, "interface %s, Creating response for UDP packet\n", interface);
                 }
                 struct ipv4_header responseUDPIPv4Header = *receivedIPHeader;
 
@@ -667,36 +600,27 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                     responseUDPIPv4Header.totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + *receivedPayloadLength;
                     responseUDPIPv4Header.totalLength = (htons(responseUDPIPv4Header.totalLength));
 
-                    responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, payload, receivedPayloadLength, &responseUDPIPv4Header, debug);
+                    responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, payload, receivedPayloadLength, &responseUDPIPv4Header, interface, debug);
 
                     struct pcap_pkthdr responseUDPProtocolPcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
-                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, payload, receivedPayloadLength);
+                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, payload, receivedPayloadLength, interface, debug);
                     free(payload);
                 }
                 else // udp ping
                 {
                     responseUDPIPv4Header.totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + *receivedPayloadLength;
                     
-                    responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, &responseUDPIPv4Header, debug);
+                    responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, receivedPayload, receivedPayloadLength, &responseUDPIPv4Header, interface, debug);
                     
                     struct pcap_pkthdr responseUDPProtocolPcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
 
-                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, receivedPayload, receivedPayloadLength);
+                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, receivedPayload, receivedPayloadLength, interface, debug);
                 }
                 break;
             
-            /*case IPPROTO_TCP:
-                if (debug == 1)
-                {
-                    fprintf(stdout, "Creating response for TCP packet\n");
-                }
-                struct tcp_header responseTCPProtocolHeader = createResponseTCPHeader((struct tcp_header*) receivedProtocolHeader);
-                uint8_t* responseTCPPayload = createResponsePayload(receivedPayload);
-                break;*/
-            
             default:
                 fflush(stdout);
-                fprintf(stderr, "Create Packet: Unsupported Protocol\n");
+                fprintf(stderr, "interface %s, Create Packet: Unsupported Protocol\n", interface);
                 break;
         }
     }
@@ -720,7 +644,7 @@ struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHead
     return responseHeader;
 }
 
-struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength, const int debug)
+struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength, char* interface, const int debug)
 {
     struct ipv4_header responseIPv4Header;
 
@@ -737,9 +661,6 @@ struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader
             responseIPv4Header.totalLength += sizeof(struct udp_header);
             break;
 
-            case IPPROTO_TCP:
-                responseIPv4Header.totalLength += sizeof(struct tcp_header);
-                break;
         default:
             fflush(stdout);
             fprintf(stderr, "Creating response ipv4 header for unsupported protocol");
@@ -753,12 +674,12 @@ struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader
     responseIPv4Header.sourceIP = receivedIPHeader->destinationIP;
     responseIPv4Header.destinationIP = receivedIPHeader->sourceIP;
     responseIPv4Header.headerChecksum = 0; // Set to 0 before computing
-    responseIPv4Header.headerChecksum = calculateChecksum(&responseIPv4Header, debug);
+    responseIPv4Header.headerChecksum = calculateChecksum(&responseIPv4Header, interface, debug);
 
     return responseIPv4Header;
 }
 
-struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength, const int debug)
+struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength, char* interface, const int debug)
 {
     struct icmp_header responseICMPHeader;
     responseICMPHeader.type = 0;
@@ -767,12 +688,12 @@ struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHead
     responseICMPHeader.identifier = receivedICMPHeader->identifier;
     responseICMPHeader.sequenceNumber = receivedICMPHeader->sequenceNumber;
 
-    responseICMPHeader.checkSum = calculateICMPChecksum(&responseICMPHeader, payload, payloadLength, debug);
+    responseICMPHeader.checkSum = calculateICMPChecksum(&responseICMPHeader, payload, payloadLength, interface, debug);
 
     return responseICMPHeader;
 }
 
-struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header, const int debug)
+struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header, char* interface, const int debug)
 {
     // Received header is passed in for modification to be used for response
     responseIPv4Header->timeToLive = 64;
@@ -780,23 +701,17 @@ struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, 
     responseIPv4Header->sourceIP = responseIPv4Header->destinationIP;
     responseIPv4Header->destinationIP = temp;
     responseIPv4Header->headerChecksum = 0;
-    responseIPv4Header->headerChecksum = calculateChecksum(responseIPv4Header, debug);
+    responseIPv4Header->headerChecksum = calculateChecksum(responseIPv4Header, interface, debug);
 
     struct udp_header responseUDPHeader;
     responseUDPHeader.sourcePort = receivedUDPHeader->destinationPort;
     responseUDPHeader.destinationPort = receivedUDPHeader->sourcePort;
     responseUDPHeader.length = sizeof(struct udp_header) + *payloadLength;
     responseUDPHeader.checksum = 0;
-    responseUDPHeader.checksum = calculateUDPChecksum(&responseUDPHeader, responseIPv4Header, payload, payloadLength, debug);
+    responseUDPHeader.checksum = calculateUDPChecksum(&responseUDPHeader, responseIPv4Header, payload, payloadLength, interface, debug);
     
     return responseUDPHeader;
 }
-
-/*struct tcp_header createResponseTCPHeader(struct tcp_header* receivedTCPHeader)
-{
-    struct tcp_header responseTCPHeader;
-    return responseTCPHeader;
-}*/
 
 uint8_t* createResponsePayload(uint8_t* receivedPayload)
 {
@@ -818,7 +733,7 @@ struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen)
     return header;
 }
 
-void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength)
+void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength, char* interface, const int debug)
 {
     int success = -1;
 
@@ -839,22 +754,28 @@ void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* et
     iov[4].iov_base = payload;
     iov[4].iov_len = *payloadLength;
 
-    fprintf(stdout, "total length %u\n", ipHeader->totalLength);
-    fprintf(stdout, "size: %lu\n", sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *payloadLength);
-    fprintf(stdout, "payload size: %lu\n", *payloadLength);
+    if (debug > 0)
+    {
+        fprintf(stdout, "interface %s, total length %u\n", interface, ipHeader->totalLength);
+        fprintf(stdout, "interface %s, size: %lu\n", interface, sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *payloadLength);
+        fprintf(stdout, "interface %s, payload size: %lu\n", interface, *payloadLength);
+    }
 
     while (success == -1)
     {
         success = writev(fd, iov, 5);
     }
-    fprintf(stdout, "SIZE ACTUALLY WRITTEN: %d\n", success);
+    if (debug > 0)
+    {
+        fprintf(stdout, "interface %s, SIZE ACTUALLY WRITTEN: %d\n", interface, success);
+    }
 }
 
 void* MallocZ (int nbytes){
     char *ptr = malloc(nbytes);  // use the real routine
     if (ptr == NULL)
 	{
-	    perror ("MallocZ failed, fatal\n");
+	    perror ("MallocZ failed, fatal\n"); 
 	    exit (66);
 	}
 

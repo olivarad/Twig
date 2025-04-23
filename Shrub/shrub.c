@@ -35,7 +35,7 @@ void freeVariablesAndClose();
 
 void handleSigint(int sig);
 
-void ensurePcapFileHeader(int fd);
+void ensurePcapFileHeader(int fd, char* interface);
 
 int main(int argc, char *argv[])
 {
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
                 *fileDescriptors[i] = open(networkAddresses[i], O_RDWR | O_APPEND | O_CREAT, 0660);
                 if (debug > 0)
                 {
-                    fprintf(stdout, "open status: %d for network address %s\n", *fileDescriptors[i], networkAddresses[i]);
+                    fprintf(stdout, "open status: %d for network address %s with interface %s\n", *fileDescriptors[i], networkAddresses[i], interfaces[i]);
                 }
                 if (*fileDescriptors[i] == -1)
                 {
@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
 
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
-        ensurePcapFileHeader(*fileDescriptors[i]);
+        ensurePcapFileHeader(*fileDescriptors[i], interfaces[i]);
     }
 
     if (debug > 0)
@@ -439,7 +439,7 @@ void handleSigint(int sig)
     keepRunning = 0;
 }
 
-void ensurePcapFileHeader(int fd) 
+void ensurePcapFileHeader(int fd, char* interface) 
 {
     uint8_t buf[24];
 
@@ -472,7 +472,7 @@ void ensurePcapFileHeader(int fd)
     {
         uint8_t check[24];
         read(fd, check, sizeof(check));
-            fprintf(stdout, "PCAP file header for fd %d:\n\t", fd);
+            fprintf(stdout, "PCAP file header for interface %s:\n\t", interface);
         for (int i = 0; i < 24; i++) 
         {
             fprintf(stdout, "%02x ", check[i]);

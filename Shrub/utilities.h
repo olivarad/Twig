@@ -60,28 +60,6 @@ struct arp_header
     uint8_t target_ip[4];
 };
 
-struct tcp_header
-{
-	uint16_t sourcePort;
-	uint16_t destinationPort;
-	uint32_t sequence;
-	uint32_t ack;
-	uint8_t dataOffset;
-	uint8_t flags;
-	uint16_t window;
-	uint16_t checksum;
-	uint16_t urgentPointer;
-};
-
-struct tcp_pseudo_header
-{
-    uint32_t source_ip;
-    uint32_t dest_ip;
-    uint8_t reserved;
-    uint8_t protocol;
-    uint16_t tcp_length;
-};
-
 struct udp_header
 {
 	uint16_t sourcePort;
@@ -137,23 +115,21 @@ int readFileHeader(const int fd);
 
 void* readPacket(void* args);
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, const int debug);
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, char* interface, const int debug);
 
 struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t** mac);
 
-struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength, const int debug);
+struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength, char* interface, const int debug);
 
-struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength, const int debug);
+struct icmp_header createResponseICMPHeader(struct icmp_header* receivedICMPHeader, uint8_t* payload, size_t* payloadLength, char* interface, const int debug);
 
-struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header, const int debug);
-
-struct tcp_header createResponseTCPHeader(struct tcp_header* receivedTCPHeader);
+struct udp_header createResponseUDPHeader(struct udp_header* receivedUDPHeader, uint8_t* payload, size_t* payloadLength, struct ipv4_header* responseIPv4Header, char* interface, const int debug);
 
 uint8_t* createResponsePayload(uint8_t* receivedPayload);
 
 struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen);
 
-void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength);
+void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength, char* interface, const int debug);
 
 void* MallocZ (int nbytes);
 

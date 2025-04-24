@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define RIPPORT 520
+
 typedef int32_t bpf_int32;
 typedef u_int32_t bpf_u_int32;
 
@@ -104,6 +106,12 @@ struct rip_entry
 	uint32_t metric; // hop count (1 - 16, 16 = unreachable)
 };
 
+struct rip_table_entry
+{
+	struct rip_entry entry;
+	u_int8_t* advertiserMACAddress; // who gave you the info+
+};
+
 struct readPacketArguments
 {
 	int count;
@@ -112,7 +120,7 @@ struct readPacketArguments
 	char* interface;
 	char** interfaces;
 	uint32_t broadcastAddress;
-	uint8_t** mac;
+	uint8_t* mac;
 	int debug;
 	size_t* maximumPacketSize;
 	size_t* maximumPayloadSize;
@@ -130,19 +138,21 @@ char** calculateNetworkBroadcastAndSubnetLength(char** addresses, char** network
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
 
-void printRouteTable(struct rip_entry** routeTable, const unsigned count);
+void printRouteTable(struct rip_table_entry** routeTable, const unsigned count);
 
-void createDefaultRouteTable(struct rip_entry** routeTable, char** networkAddresses, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
+void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
 
-int embedIPv4InMac(const char* IPv4, uint8_t** mac);
+void advertiseRIP(struct rip_table_entry** routeTable, int fd, char* receivingInterface, const unsigned maxRoutes);
+
+int embedIPv4InMac(const char* IPv4, uint8_t* mac);
 
 int readFileHeader(const int fd);
 
 void* readPacket(void* args);
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, char* interface, const int debug);
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t* mac, char* interface, const int debug);
 
-struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t** mac);
+struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t* mac);
 
 struct ipv4_header createResponseIPv4Header(struct ipv4_header* receivedIPHeader, size_t* payloadLength, char* interface, const int debug);
 

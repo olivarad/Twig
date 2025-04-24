@@ -359,40 +359,47 @@ static void ipStringFromUint32(char* buffer, uint32_t ipHostOrder)
     }
 }
 
-void printRouteTable(struct rip_entry** routeTable, const unsigned count)
+void printRouteTable(struct rip_table_entry** routeTable, const unsigned count)
 {
     char ipString[INET_ADDRSTRLEN];
     char nextHopString[INET_ADDRSTRLEN];
     for (unsigned i = 0; i < count; ++i)
     {
-        if (routeTable[i]->address != 0)
+        if (routeTable[i]->entry.address != 0)
         {
-            ipStringFromUint32(ipString, routeTable[i]->address);
-            ipStringFromUint32(nextHopString, routeTable[i]->nextHop);
+            ipStringFromUint32(ipString, routeTable[i]->entry.address);
+            ipStringFromUint32(nextHopString, routeTable[i]->entry.nextHop);
             fprintf(stdout, "Entry %u:\n", i);
             fprintf(stdout, "\taddress: %s\n", ipString);
-            fprintf(stdout, "\tsubnet mask: %u\n", routeTable[i]->subnetMask);
+            fprintf(stdout, "\tsubnet mask: %u\n", routeTable[i]->entry.subnetMask);
             fprintf(stdout, "\tnext hop: %s\n", nextHopString);
-            fprintf(stdout, "\tmetric: %u\n", routeTable[i]->metric);
+            fprintf(stdout, "\tmetric: %u\n", routeTable[i]->entry.metric);
+            fprintf(stdout, "\tAdvertised by: ");
+            printf("%02X:%02X:%02X:%02X:%02X:%02X\n", routeTable[i]->advertiserMACAddress[0], routeTable[i]->advertiserMACAddress[1], routeTable[i]->advertiserMACAddress[2], routeTable[i]->advertiserMACAddress[3], routeTable[i]->advertiserMACAddress[4], routeTable[i]->advertiserMACAddress[5]);
         }
     }
 }
 
-void createDefaultRouteTable(struct rip_entry** routeTable, char** networkAddresses, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug)
+void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug)
 {
     for (unsigned i = 0; i < routeCount; ++i)
     {
-        routeTable[i]->addressFamilyIdentifier = 2; // IP
-        routeTable[i]->routeTag = 0;
-        routeTable[i]->address = 0;
-        routeTable[i]->subnetMask = 0;
-        routeTable[i]->nextHop = 0;
-        routeTable[i]->metric = 16;
+        routeTable[i]->entry.addressFamilyIdentifier = 2; // IP
+        routeTable[i]->entry.routeTag = 0;
+        routeTable[i]->entry.address = 0;
+        routeTable[i]->entry.subnetMask = 0;
+        routeTable[i]->entry.nextHop = 0;
+        routeTable[i]->entry.metric = 16;
+        for (unsigned j = 0; j < 6; ++j)
+        {
+            routeTable[i]->advertiserMACAddress[j] = 0;
+        }
         if (i < interfaceCount)
         {
-            routeTable[i]->address = ipStringToHostUint32(networkAddresses[i]);
-            routeTable[i]->subnetMask = subnetLengths[i];
-            routeTable[i]->metric = 1;
+            routeTable[i]->entry.address = ipStringToHostUint32(networkAddresses[i]);
+            routeTable[i]->entry.subnetMask = subnetLengths[i];
+            routeTable[i]->entry.metric = 0;
+            embedIPv4InMac(interfaces[i], (routeTable[i]->advertiserMACAddress));
 
             if (debug >= 1)
             {
@@ -402,25 +409,38 @@ void createDefaultRouteTable(struct rip_entry** routeTable, char** networkAddres
     }
 }
 
-int embedIPv4InMac(const char* IPv4, uint8_t** mac)
+/*void advertiseRIP(struct rip_table_entry** routeTable, int fd, char* receivingInterface, const unsigned maxRoutes)
+{
+    struct rip_header header;
+    header.command = 2;
+    header.version = 2;
+    header.zero = 0;
+
+    struct rip_enty* entries[25];
+
+    for (unsigned i = 0; i < maxRoutes; ++i)
+    {
+        //if ()
+    }
+}*/
+
+int embedIPv4InMac(const char* IPv4, uint8_t* mac)
 {
     struct in_addr ipv4;
 
     // Invalid ipv4 address
-    fflush(stdout);
     if (inet_pton(AF_INET, IPv4, &ipv4) != 1)
     {
         return 0;
     }
-    fflush(stdout);
 
-    *mac[0] = 0x5E;
-    *mac[1] = 0xFE;
+    mac[0] = 0x5E;
+    mac[1] = 0xFE;
     uint8_t* ip_bytes = (uint8_t *)&ipv4;
-    *mac[2] = ip_bytes[0];
-    *mac[3] = ip_bytes[1];
-    *mac[4] = ip_bytes[2];
-    *mac[5] = ip_bytes[3];
+    mac[2] = ip_bytes[0];
+    mac[3] = ip_bytes[1];
+    mac[4] = ip_bytes[2];
+    mac[5] = ip_bytes[3];
 
     return 1; // Success
 }
@@ -453,7 +473,7 @@ void* readPacket(void* args)
     char* interface = arguments->interface;
     //char** interfaces = arguments->interfaces;
     uint32_t broadcastAddress = arguments->broadcastAddress;
-    uint8_t** mac = arguments->mac;
+    uint8_t* mac = arguments->mac;
     int debug = arguments->debug;
     size_t* maximumPacketSize = arguments->maximumPacketSize;
     size_t* maximumPayloadSize = arguments->maximumPayloadSize;
@@ -615,7 +635,7 @@ void* readPacket(void* args)
     return NULL;
 }
 
-void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t** mac, char* interface, const int debug)
+void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct eth_hdr* receivedEthernetHeader, struct ipv4_header* receivedIPHeader, void* receivedProtocolHeader, uint8_t* receivedPayload, size_t* receivedPayloadLength, uint8_t* payload, size_t* maximumPayloadSize, uint8_t* mac, char* interface, const int debug)
 {
 
     uint32_t remainingCaptureLength = receivedPcapHeader->caplen;
@@ -706,13 +726,13 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
     }
 }
 
-struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t** mac)
+struct eth_hdr createResponseEthernetHeader(struct eth_hdr* receivedEthernetHeader, uint8_t* mac)
 {
     struct eth_hdr responseHeader;
     memcpy(&responseHeader.destinationMACAddress, receivedEthernetHeader->sourceMACAddress, sizeof(responseHeader.destinationMACAddress));
     for (unsigned i = 0; i < 6; ++i)
     {
-        responseHeader.sourceMACAddress[i] = *mac[i];
+        responseHeader.sourceMACAddress[i] = mac[i];
     }
     responseHeader.type = receivedEthernetHeader->type;
 

@@ -28,7 +28,7 @@ uint8_t* subnetLengths = NULL;
 char* defaultRoute = NULL;
 struct readPacketArguments** threadArguments = NULL;
 unsigned interfaceCount = 0;
-struct rip_entry** routingTable;
+struct rip_table_entry** routingTable;
 int RIPInterval = 30;
 
 
@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
     networkAddresses = calculateNetworkBroadcastAndSubnetLength(interfaces, networkAddresses, broadcastAddresses, subnetLengths, interfaceCount, debug);
     trimInterfaces(interfaces, interfaceCount, debug);
 
-    createDefaultRouteTable(routingTable, networkAddresses, subnetLengths, interfaceCount, 1000, debug);
+    createDefaultRouteTable(routingTable, networkAddresses, interfaces, subnetLengths, interfaceCount, ROUTETABLESIZE, debug);
 
     struct timespec ts;
     ts.tv_sec = 0;
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
         threadArguments[i]->mac = MallocZ(sizeof(uint8_t*) * 6);
         for (unsigned j = 0; j < 6; ++j)
         {
-            threadArguments[i]->mac[j] = MallocZ(1);
+            threadArguments[i]->mac = MallocZ(6);
         }
         if (embedIPv4InMac(threadArguments[i]->interface, threadArguments[i]->mac) != 1)
         {
@@ -233,10 +233,11 @@ void checkOptions(const int argc, char* argv[])
             *fileDescriptors[i] = -1; // ensure assigned of not open
         }
 
-        routingTable = MallocZ(ROUTETABLESIZE * sizeof(struct rip_entry*));
+        routingTable = MallocZ(ROUTETABLESIZE * sizeof(struct rip_table_entry*));
         for (unsigned i = 0; i < ROUTETABLESIZE; ++i)
         {
-            routingTable[i] = MallocZ(sizeof(struct rip_entry));
+            routingTable[i] = MallocZ(sizeof(struct rip_table_entry));
+            routingTable[i]->advertiserMACAddress = MallocZ(sizeof(uint8_t) * 6);
         }
 
         interfaceCount = requestedInterfaceCount;
@@ -402,6 +403,11 @@ void freeVariablesAndClose()
         {
             if (routingTable[i] != NULL)
             {
+                if (routingTable[i]->advertiserMACAddress != NULL)
+                {
+                    free(routingTable[i]->advertiserMACAddress);
+                    routingTable[i]->advertiserMACAddress = NULL;
+                }
                 free(routingTable[i]);
                 routingTable[i] = NULL;
             }
@@ -434,14 +440,6 @@ void freeVariablesAndClose()
             {
                 if (threadArguments[i]->mac != NULL)
                 {
-                    for (unsigned j = 0; j < 6; ++j)
-                    {
-                        if (threadArguments[i]->mac[j] != NULL)
-                        {
-                            free(threadArguments[i]->mac[j]);
-                            threadArguments[i]->mac[j] = NULL;
-                        }
-                    }
                     free(threadArguments[i]->mac);
                     threadArguments[i]->mac = NULL;
                 }

@@ -23,9 +23,11 @@ int** fileDescriptors = NULL;
 char** interfaces = NULL;
 char** networkAddresses = NULL;
 uint32_t* broadcastAddresses = NULL;
+uint8_t* subnetLengths = NULL;
 char* defaultRoute = NULL;
 struct readPacketArguments** threadArguments = NULL;
 unsigned interfaceCount = 0;
+struct rip_entry routingTable[1000];
 int RIPInterval = 30;
 
 
@@ -45,7 +47,7 @@ int main(int argc, char *argv[])
 
     checkOptions(argc, argv);
 
-    networkAddresses = calculateNetworkAndBroadcastAddresses(interfaces, networkAddresses, broadcastAddresses, interfaceCount, debug);
+    networkAddresses = calculateNetworkBroadcastAndSubnetLength(interfaces, networkAddresses, broadcastAddresses, subnetLengths, interfaceCount, debug);
     trimInterfaces(interfaces, interfaceCount, debug);
 
     struct timespec ts;
@@ -55,11 +57,14 @@ int main(int argc, char *argv[])
     while (keepRunning == 1 && notAllAssigned == 1)
     {
         notAllAssigned = -1;
+        char filename[INET_ADDRSTRLEN + 4]; // +4 for .dmp
+
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
             if (*fileDescriptors[i] == -1)
             {
-                *fileDescriptors[i] = open(networkAddresses[i], O_RDWR | O_APPEND | O_CREAT, 0660);
+                snprintf(filename, sizeof(filename), "%s_%u.dmp", networkAddresses[i], subnetLengths[i]);
+                *fileDescriptors[i] = open(filename, O_RDWR | O_APPEND | O_CREAT, 0660);
                 if (debug > 0)
                 {
                     fprintf(stdout, "open status: %d for network address %s with interface %s\n", *fileDescriptors[i], networkAddresses[i], interfaces[i]);
@@ -85,8 +90,11 @@ int main(int argc, char *argv[])
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
         threadArguments[i] = MallocZ (sizeof(struct readPacketArguments));
+        threadArguments[i]->count = interfaceCount;
         threadArguments[i]->fd = *fileDescriptors[i];
+        threadArguments[i]->fileDescriptors = fileDescriptors;
         threadArguments[i]->interface = interfaces[i];
+        threadArguments[i]->interfaces = interfaces;
         threadArguments[i]->broadcastAddress = broadcastAddresses[i];
         
         threadArguments[i]->mac = MallocZ(sizeof(uint8_t*) * 6);
@@ -207,11 +215,13 @@ void checkOptions(const int argc, char* argv[])
         networkAddresses = MallocZ(requestedInterfaceCount * sizeof(char*));
         for (unsigned i = 0; i < requestedInterfaceCount; ++i)
         {
-            networkAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN + 4));
+            networkAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN));
             networkAddresses[i][0] = '\0';
         }
 
         broadcastAddresses = MallocZ(requestedInterfaceCount * sizeof(uint32_t));
+
+        subnetLengths = MallocZ(requestedInterfaceCount * sizeof(uint8_t));
         
         fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
         for (int i = 0; i < requestedInterfaceCount; ++i)
@@ -375,11 +385,20 @@ void freeVariablesAndClose()
             networkAddresses[i] = NULL;
         }
     }
-
+    free (fileDescriptors);
     fileDescriptors = NULL;
+
+    free(interfaces);
     interfaces = NULL;
+
+    free(networkAddresses);
     networkAddresses = NULL;
+
+    free(broadcastAddresses);
     broadcastAddresses = NULL;
+
+    free(subnetLengths);
+    subnetLengths = NULL;
 
     if (threadArguments != NULL)
     {

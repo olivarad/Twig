@@ -86,10 +86,31 @@ struct icmp_header
     uint16_t sequenceNumber;
 };
 
+struct rip_header
+{
+	uint8_t command;
+	uint8_t version;
+	uint16_t zero;
+};
+
+// Convert to network byte order before sending
+struct rip_entry
+{
+	uint16_t addressFamilyIdentifier;
+	uint16_t routeTag;
+	uint32_t address; // Where you advertise a route to
+	uint32_t subnetMask;
+	uint32_t nextHop;
+	uint32_t metric; // hop count (1 - 16, 16 = unreachable)
+};
+
 struct readPacketArguments
 {
+	int count;
 	int fd;
+	int** fileDescriptors;
 	char* interface;
+	char** interfaces;
 	uint32_t broadcastAddress;
 	uint8_t** mac;
 	int debug;
@@ -105,9 +126,11 @@ void printHelp();
 
 void checkInterface(char* interface);
 
-char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, const unsigned count, const int debug);
+char** calculateNetworkBroadcastAndSubnetLength(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, uint8_t* subnetLengths, const unsigned count, const int debug);
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
+
+void createDefaultRouteTable(struct rip_entry** route, const unsigned count);
 
 int embedIPv4InMac(const char* IPv4, uint8_t** mac);
 

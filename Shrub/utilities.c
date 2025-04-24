@@ -266,7 +266,7 @@ static uint32_t calculateBroadcastAddress(uint32_t netAddress, char* ipStr, uint
     return broadcastAddress;
 }
 
-char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, const unsigned count, const int debug)
+char** calculateNetworkBroadcastAndSubnetLength(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, uint8_t* subnetLengths, const unsigned count, const int debug)
 {
 
     uint32_t netAddress;
@@ -282,6 +282,7 @@ char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAdd
         
         struct in_addr ipAddr, netmask, network;
         subnetLength = atoi(cidrStr); // Convert CIDR to integer for calculations
+        subnetLengths[i] = subnetLength;
 
         // Convert IP address from string to binary
         if (inet_pton(AF_INET, ipStr, &ipAddr) != 1) 
@@ -304,10 +305,11 @@ char** calculateNetworkAndBroadcastAddresses(char** addresses, char** networkAdd
         inet_ntop(AF_INET, &network, netIP, INET_ADDRSTRLEN);
 
         // Write the final result into networkAddress
-        sprintf(networkAddresses[i], "%s_%s.dmp", netIP, cidrStr);
+        sprintf(networkAddresses[i], "%s", netIP);
+
         if (debug > 0)
         {
-            fprintf(stdout, "Network address for interface %s calculated as: %s\n\n", ipStr, networkAddresses[i]);
+            fprintf(stdout, "Network address for interface %s calculated as: %s/%hu\n\n", ipStr, networkAddresses[i], subnetLengths[i]);
         }
     }
 
@@ -327,6 +329,19 @@ void trimInterfaces(char** interfaces, const unsigned count, int debug)
         {
             fprintf(stdout, "Interface trimmed to: %s\n", interfaces[i]);
         }
+    }
+}
+
+void createDefaultRouteTable(struct rip_entry** route, const unsigned count)
+{
+    for (unsigned i = 0; i < count; ++i)
+    {
+        route[i]->addressFamilyIdentifier = 2; // IP
+        route[i]->routeTag = 0;
+        route[i]->address = 0;
+        route[i]->subnetMask = 0;
+        route[i]->nextHop = 0;
+        route[i]->metric = 0;
     }
 }
 
@@ -375,8 +390,11 @@ int readFileHeader(const int fd)
 void* readPacket(void* args)
 {
     struct readPacketArguments* arguments = (struct readPacketArguments*)args;
+    //int interfaceCount = arguments->count;
     int fd = arguments->fd;
+    //int** fileDescriptors = arguments->fileDescriptors;
     char* interface = arguments->interface;
+    //char** interfaces = arguments->interfaces;
     uint32_t broadcastAddress = arguments->broadcastAddress;
     uint8_t** mac = arguments->mac;
     int debug = arguments->debug;

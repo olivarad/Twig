@@ -130,7 +130,9 @@ char** calculateNetworkBroadcastAndSubnetLength(char** addresses, char** network
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
 
-void createDefaultRouteTable(struct rip_entry** route, const unsigned count);
+void printRouteTable(struct rip_entry** routeTable, const unsigned count);
+
+void createDefaultRouteTable(struct rip_entry** routeTable, char** networkAddresses, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
 
 int embedIPv4InMac(const char* IPv4, uint8_t** mac);
 

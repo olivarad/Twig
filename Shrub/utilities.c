@@ -68,6 +68,20 @@ static void printIPv4Header(const struct ipv4_header* header, char* interface)
     fprintf(stdout, "Destination IP: %s\n", inet_ntoa(dst));
 }
 
+static uint32_t ipStringToHostUint32(const char* ipString)
+{
+    struct in_addr addr;
+
+    if (inet_pton(AF_INET, ipString, &addr) != 1) 
+    {
+        fflush(stdout);
+        fprintf(stderr, "Invalid IP address: %s\n", ipString);
+        exit(66);
+    }
+
+    return ntohl(addr.s_addr);
+}
+
 static uint16_t calculateChecksum(const struct ipv4_header* header, char* interface, const int debug) 
 {
     uint32_t checksum = 0;
@@ -332,16 +346,59 @@ void trimInterfaces(char** interfaces, const unsigned count, int debug)
     }
 }
 
-void createDefaultRouteTable(struct rip_entry** route, const unsigned count)
+// Expect host order ip address
+static void ipStringFromUint32(char* buffer, uint32_t ipHostOrder)
 {
+    struct in_addr addr;
+    addr.s_addr = htonl(ipHostOrder);  // Convert to network byte order
+
+    if (inet_ntop(AF_INET, &addr, buffer, INET_ADDRSTRLEN) == NULL) 
+    {
+        perror("inet_ntop");
+        exit(66);
+    }
+}
+
+void printRouteTable(struct rip_entry** routeTable, const unsigned count)
+{
+    char ipString[INET_ADDRSTRLEN];
+    char nextHopString[INET_ADDRSTRLEN];
     for (unsigned i = 0; i < count; ++i)
     {
-        route[i]->addressFamilyIdentifier = 2; // IP
-        route[i]->routeTag = 0;
-        route[i]->address = 0;
-        route[i]->subnetMask = 0;
-        route[i]->nextHop = 0;
-        route[i]->metric = 0;
+        if (routeTable[i]->address != 0)
+        {
+            ipStringFromUint32(ipString, routeTable[i]->address);
+            ipStringFromUint32(nextHopString, routeTable[i]->nextHop);
+            fprintf(stdout, "Entry %u:\n", i);
+            fprintf(stdout, "\taddress: %s\n", ipString);
+            fprintf(stdout, "\tsubnet mask: %u\n", routeTable[i]->subnetMask);
+            fprintf(stdout, "\tnext hop: %s\n", nextHopString);
+            fprintf(stdout, "\tmetric: %u\n", routeTable[i]->metric);
+        }
+    }
+}
+
+void createDefaultRouteTable(struct rip_entry** routeTable, char** networkAddresses, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug)
+{
+    for (unsigned i = 0; i < routeCount; ++i)
+    {
+        routeTable[i]->addressFamilyIdentifier = 2; // IP
+        routeTable[i]->routeTag = 0;
+        routeTable[i]->address = 0;
+        routeTable[i]->subnetMask = 0;
+        routeTable[i]->nextHop = 0;
+        routeTable[i]->metric = 16;
+        if (i < interfaceCount)
+        {
+            routeTable[i]->address = ipStringToHostUint32(networkAddresses[i]);
+            routeTable[i]->subnetMask = subnetLengths[i];
+            routeTable[i]->metric = 1;
+
+            if (debug >= 1)
+            {
+                printRouteTable(routeTable, routeCount);
+            }
+        }
     }
 }
 

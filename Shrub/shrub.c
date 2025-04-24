@@ -18,6 +18,7 @@
 volatile sig_atomic_t keepRunning = 1;
 
 unsigned debug = 0;
+const unsigned ROUTETABLESIZE = 1000;
 
 int** fileDescriptors = NULL;
 char** interfaces = NULL;
@@ -27,7 +28,7 @@ uint8_t* subnetLengths = NULL;
 char* defaultRoute = NULL;
 struct readPacketArguments** threadArguments = NULL;
 unsigned interfaceCount = 0;
-struct rip_entry routingTable[1000];
+struct rip_entry** routingTable;
 int RIPInterval = 30;
 
 
@@ -49,6 +50,8 @@ int main(int argc, char *argv[])
 
     networkAddresses = calculateNetworkBroadcastAndSubnetLength(interfaces, networkAddresses, broadcastAddresses, subnetLengths, interfaceCount, debug);
     trimInterfaces(interfaces, interfaceCount, debug);
+
+    createDefaultRouteTable(routingTable, networkAddresses, subnetLengths, interfaceCount, 1000, debug);
 
     struct timespec ts;
     ts.tv_sec = 0;
@@ -229,6 +232,13 @@ void checkOptions(const int argc, char* argv[])
             fileDescriptors[i] = MallocZ(sizeof(int));
             *fileDescriptors[i] = -1; // ensure assigned of not open
         }
+
+        routingTable = MallocZ(ROUTETABLESIZE * sizeof(struct rip_entry*));
+        for (unsigned i = 0; i < ROUTETABLESIZE; ++i)
+        {
+            routingTable[i] = MallocZ(sizeof(struct rip_entry));
+        }
+
         interfaceCount = requestedInterfaceCount;
         unsigned currentInterfaceIndex = 0;
 
@@ -385,6 +395,22 @@ void freeVariablesAndClose()
             networkAddresses[i] = NULL;
         }
     }
+
+    if (routingTable != NULL)
+    {
+        for (unsigned i = 0; i < ROUTETABLESIZE; ++i)
+        {
+            if (routingTable[i] != NULL)
+            {
+                free(routingTable[i]);
+                routingTable[i] = NULL;
+            }
+        }
+
+        free(routingTable);
+        routingTable = NULL;
+    }
+
     free (fileDescriptors);
     fileDescriptors = NULL;
 

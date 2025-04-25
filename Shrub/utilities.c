@@ -610,7 +610,7 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     udp.length = htons(udp.length);
     // UDP header in network byte order
 
-    sendPacket(fd, &pcap, &eth, &iph, &header, sizeof(struct rip_header), ripPayload, &ripPayloadSize, interface, debug);
+    sendPacket(fd, &pcap, &eth, &iph, &udp, sizeof(struct udp_header), ripPayload, &ripPayloadSize, interface, debug);
 }
 
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6])

@@ -100,11 +100,6 @@ int main(int argc, char *argv[])
         threadArguments[i]->interfaces = interfaces;
         threadArguments[i]->broadcastAddress = broadcastAddresses[i];
         
-        threadArguments[i]->mac = MallocZ(sizeof(uint8_t*) * 6);
-        for (unsigned j = 0; j < 6; ++j)
-        {
-            threadArguments[i]->mac = MallocZ(6);
-        }
         if (embedIPv4InMac(threadArguments[i]->interface, threadArguments[i]->mac) != 1)
         {
             fflush(stdout);
@@ -237,7 +232,6 @@ void checkOptions(const int argc, char* argv[])
         for (unsigned i = 0; i < ROUTETABLESIZE; ++i)
         {
             routingTable[i] = MallocZ(sizeof(struct rip_table_entry));
-            routingTable[i]->advertiserMACAddress = MallocZ(sizeof(uint8_t) * 6);
         }
 
         interfaceCount = requestedInterfaceCount;
@@ -403,11 +397,6 @@ void freeVariablesAndClose()
         {
             if (routingTable[i] != NULL)
             {
-                if (routingTable[i]->advertiserMACAddress != NULL)
-                {
-                    free(routingTable[i]->advertiserMACAddress);
-                    routingTable[i]->advertiserMACAddress = NULL;
-                }
                 free(routingTable[i]);
                 routingTable[i] = NULL;
             }
@@ -438,12 +427,6 @@ void freeVariablesAndClose()
         {
             if (threadArguments[i] != NULL)
             {
-                if (threadArguments[i]->mac != NULL)
-                {
-                    free(threadArguments[i]->mac);
-                    threadArguments[i]->mac = NULL;
-                }
-
                 if (threadArguments[i]->packetBuffer != NULL)
                 {
                     free(threadArguments[i]->packetBuffer);

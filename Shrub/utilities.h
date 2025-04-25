@@ -4,10 +4,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-const uint32_t RIPMULTICASTADDRESS = 0x090000E0; // THIS IS IN HOST BYTE ORDER
-const char RIPMULTICASTADDRESSSTRING[] = "224.0.0.9";
-#define RIPPORT 520
-
 typedef int32_t bpf_int32;
 typedef u_int32_t bpf_u_int32;
 
@@ -22,6 +18,7 @@ struct pcap_file_header
 	bpf_u_int32 linktype;	/* data link type (LINKTYPE_*) */
 };
 
+// ALWAYS HOST BYTE ORDER
 struct pcap_pkthdr 
 {
 	bpf_u_int32 ts_secs;		/* time stamp */
@@ -30,6 +27,7 @@ struct pcap_pkthdr
 	bpf_u_int32 len;	/* length of this packet (off wire) */
 };
 
+// ALWAYS HOST BYTE ORDER
 struct eth_hdr 
 {
 	u_int8_t destinationMACAddress[6];
@@ -47,8 +45,8 @@ struct ipv4_header
 	uint8_t timeToLive;
 	uint8_t protocol;
 	uint16_t headerChecksum;
-	uint32_t sourceIP;
-	uint32_t destinationIP;
+	uint32_t sourceIP; // DUE TO SILLYNESS I OFTEN STORE THESE IN HOST ORDER BUT THEY SHOULD BE IN NETWORK ORDER WHEN DOING BASICALLY ANYTHING WITH THEM, ESPECIALLY SENDING
+	uint32_t destinationIP; // SAME
 };
 
 struct arp_header
@@ -111,7 +109,7 @@ struct rip_entry
 struct rip_table_entry
 {
 	struct rip_entry entry;
-	u_int8_t* advertiserMACAddress; // who gave you the info+
+	u_int8_t advertiserMACAddress[6]; // who gave you the info+
 };
 
 struct readPacketArguments
@@ -122,7 +120,7 @@ struct readPacketArguments
 	char* interface;
 	char** interfaces;
 	uint32_t broadcastAddress;
-	uint8_t* mac;
+	uint8_t mac[6];
 	int debug;
 	size_t* maximumPacketSize;
 	size_t* maximumPayloadSize;
@@ -144,9 +142,11 @@ void printRouteTable(struct rip_table_entry** routeTable, const unsigned count);
 
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
 
-void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes);
+void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug);
 
-int embedIPv4InMac(const char* IPv4, uint8_t* mac);
+void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char* interface, const int debug);
+
+int embedIPv4InMac(const char* IPv4, uint8_t mac[6]);
 
 int readFileHeader(const int fd);
 
@@ -166,7 +166,8 @@ uint8_t* createResponsePayload(uint8_t* receivedPayload);
 
 struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen);
 
-void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength, char* interface, const int debug);
+// Protocol Header length in host byte order
+void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, size_t protocolHeaderLength, uint8_t* payload, size_t* payloadLength, char* interface, const int debug);
 
 void* MallocZ (int nbytes);
 

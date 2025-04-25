@@ -14,6 +14,9 @@
 #include <sys/uio.h>
 
 #define EPOCH_DIFF 2208988800UL
+#define RIPMULTICASTADDRESS  0xE0000009 // THIS IS IN NETWORK BYTE ORDER
+#define RIPMULTICASTADDRESSSTRING "224.0.0.9";
+#define RIPPORT 520
 
 void printUsage(const char* program)
 {
@@ -82,7 +85,51 @@ static uint32_t ipStringToHostUint32(const char* ipString)
     return ntohl(addr.s_addr);
 }
 
-// Checksums calculated over data in network byte order
+static void ethHostToNetwork(struct eth_hdr* eth)
+{
+    eth->type = htons(eth->type);
+}
+
+static void ethNetworkToHost(struct eth_hdr* eth)
+{
+    eth->type = ntohs(eth->type);
+}
+
+// Not touching ip addresses because they should always be in network byte order (may be issue since i often convert so other systems may rely on it)
+static void ipHostToNetwork(struct ipv4_header* iph)
+{
+    iph->totalLength = htons(iph->totalLength);
+    iph->identification = htons(iph->identification);
+    iph->flagsAndFragmentOffset = htons(iph->flagsAndFragmentOffset);
+    iph->headerChecksum = htons(iph->headerChecksum); // Probably zero if this function is being called anyways
+}
+
+// Not touching ip addresses because they should always be in network byte order (may be issue since i often convert so other systems may rely on it)
+static void ipNetworkToHost(struct ipv4_header* iph)
+{
+    iph->totalLength = ntohs(iph->totalLength);
+    iph->identification = ntohs(iph->identification);
+    iph->flagsAndFragmentOffset = ntohs(iph->flagsAndFragmentOffset);
+    iph->headerChecksum = ntohs(iph->headerChecksum);
+}
+
+static void udpHostToNetwork(struct udp_header* udp)
+{
+    udp->sourcePort = htons(udp->sourcePort);
+    udp->destinationPort = htons(udp->destinationPort);
+    udp->length = htons(udp->length);
+    udp->checksum = htons(udp->checksum);
+}
+
+static void udpNetworkToHost(struct udp_header* udp)
+{
+    udp->sourcePort = ntohs(udp->sourcePort);
+    udp->destinationPort = ntohs(udp->destinationPort);
+    udp->length = ntohs(udp->length);
+    udp->checksum = ntohs(udp->checksum);
+}
+
+// Checksums calculated over data in host byte order, but returns network byte order checksum
 static uint16_t calculateChecksum(const struct ipv4_header* header, char* interface, const int debug) 
 {
     uint32_t checksum = 0;
@@ -150,7 +197,7 @@ static int verifyChecksum(const struct ipv4_header* header, char* interface, con
     return (computed_checksum == original_checksum);
 }
 
-// Checksums calculated over data in network byte order
+// Checksums calculated over data in network byte order - Not sure I always pass in network byte order data tho, that's what you're supposed to do, but I should have made better notes at 3 AM
 static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, char* interface, const int debug) 
 {
 
@@ -196,7 +243,7 @@ static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header*
         checksum = (checksum & 0xFFFF) + (checksum >> 16);
     }
 
-    uint16_t retval = htonl((uint16_t)~checksum);
+    uint16_t retval = htons((uint16_t)~checksum);
 
     if (debug > 0)
     {
@@ -393,6 +440,16 @@ static void copyRIPEntry(struct rip_entry* dest, const struct rip_entry* source)
     dest->metric = source->metric;
 }
 
+static void RIPHeaderHostToNetwork(struct rip_header* header)
+{
+    header->zero = htons(header->zero); // Reserved so should be zero, but just in case
+}
+
+static void RIPHeaderNetworkToHost(struct rip_header* header)
+{
+    header->zero = ntohs(header->zero); // Reserved so should be zero, but just in case
+}
+
 static void RIPHostToNetwork(struct rip_entry* entry)
 {
     entry->addressFamilyIdentifier = htons(entry->addressFamilyIdentifier);
@@ -448,58 +505,12 @@ static uint16_t randomizeIdentification()
     return rand() % 65536;
 }
 
-void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes)
+void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug)
 {
-    // ALL DATA IN HOST ORDER BEFORE SENDING, YES YOU EEPY TRANS GIRL THAT MEANS ALL, NOT JUST THE ETHERNET HEADER
-
-    // Assume there's data to send - if there isn't, this just won't be used (BIG WOOP)
-    struct pcap_pkthdr pcap;
-    // TODO - PCAP HEADER RELIANT ON OTHER PACKET ITEMS
-    //pcap.caplen = SOMETHING;
-    //pcap.len = pcap.caplen;
-    time_t now = time(NULL);
-    pcap.ts_secs = (uint32_t)now;
-    pcap.ts_usecs = (uint32_t)now * 1000000;
-
-    struct eth_hdr eth;
-    eth.destinationMACAddress[1] = 0x5E;
-    eth.destinationMACAddress[2] = 0xFE;
-    eth.destinationMACAddress[0] = 0xE0;
-    eth.destinationMACAddress[3] = 0x00;
-    eth.destinationMACAddress[4] = 0x00;
-    eth.destinationMACAddress[5] = 0x09;
-    // TODO - ASSIGN SOURCE WHEN SENDING
-    //embedIPv4InMac(, &eth.sourceMACAddress);
-    eth.type = ETHERTYPE_IP;
-
-    struct ipv4_header iph;
-    iph.versionAndHeaderLength = (4 << 4) | (sizeof(struct ipv4_header) / 4); // Version 4, header length in 32-bit words
-    iph.typeOfService = 0x00;
-    iph.totalLength = sizeof(struct ipv4_header); // TODO add entryCount * sizeof(struct rip_entry)
-    iph.identification = randomizeIdentification(); // TODO, do this after every send for set up for next
-    iph.flagsAndFragmentOffset = 0x4000;
-    iph.timeToLive = 64;
-    iph.protocol = IPPROTO_UDP;
-    iph.headerChecksum = 0; // TODO - DON'T FORGET TO OBTAIN PAYOAD AND SWITCH TO NETWORK BYTE ORDER BEFORE CALCULATING
-    // TODO - ASSIGN SOURCE WHEN SENDING
-    //iph.sourceIP = SOMETHING;
-    iph.destinationIP = RIPMULTICASTADDRESS;
-
-    struct udp_header udp;
-    udp.sourcePort = rand(); // ATTENTION - MAY BE SOURCE OF ERROR, SHOULD JUST WRAP BUT AT 1:13 AM WHILE PEOPLE ARE YELLING OUT THE WINDOW AND THE AC ISN'T ON IN THE BUILDING, I'M TIRED.
-    udp.destinationPort = RIPPORT;
-    // TODO assign length after finding payload
-    // TODO assign checksum which is payload depended
-
-    struct rip_header header;
-    header.command = 2;
-    header.version = 2;
-    header.zero = 0;
-
     unsigned entryCounter = 0;
     struct rip_entry entries[25];
 
-    for (unsigned i = 0; i < interfaceCount; ++i) // Loop through networks to multicast on
+    for (unsigned i = 0; i < interfaceCount; ++i) // Loop through networks to multicast on, aka per interface
     {
         uint32_t networkAddress = ipStringToHostUint32(networkAddresses[i]);
         for (unsigned j = 0; j < interfaceCount; ++j) // Loop throuch route table (Hi Silas)
@@ -508,31 +519,105 @@ void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, ch
             {
                 if (networkAddress != routeTable[j]->entry.address) // Only advertise useful information
                 {
-                    // Copy over usefule data but modify next hop and metric
+                    // Copy over useful data but modify next hop and metric
                     // ALL DATA IN HOST ORDER (NOT READY FOR SENDING)
                     copyRIPEntry(&entries[entryCounter], &routeTable[j]->entry);
                     entries[entryCounter].nextHop = ipStringToHostUint32(interfaces[i]);
                     entries[entryCounter].metric += 1;  
                     entryCounter++;
-                    if (entryCounter == 24) // TODO SEND THEN RESET (MAX ENTRY COUNT REACHED)
+                    if (entryCounter == 25) // 25 entries, send then prep for more
                     {
-
+                        sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
+                        entryCounter = 0;
                     }
                 }
             }
-            else // With good management, no more entries (don't forget to not be silly and not manage it on update)
+            else // With good management, no more entries left in table (don't forget to not be silly and not manage it on update)
             {
+                // Advertise any un-advertised entries and rest for next interface
+                if (entryCounter != 0)
+                {
+                    sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
+                    entryCounter = 0;
+                }
                 break;
             }
-        }
-        if (entryCounter != 0) // Entry indecies [0, entryCoutner) to send
-        {
-
         }
     }    
 }
 
-int embedIPv4InMac(const char* IPv4, uint8_t* mac)
+void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char* interface, const int debug)
+{
+    // ALL DATA IN HOST ORDER BEFORE SENDING, YES YOU EEPY TRANS GIRL THAT MEANS ALL, NOT JUST THE ETHERNET HEADER
+
+    struct pcap_pkthdr pcap;
+    pcap.caplen = sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
+    pcap.len = pcap.caplen;
+    time_t now = time(NULL);
+    pcap.ts_secs = (uint32_t)now;
+    pcap.ts_usecs = (uint32_t)now * 1000000;
+    // No need to convert byte order (should be relative byte order of machine already)
+    
+    struct eth_hdr eth;
+    eth.destinationMACAddress[1] = 0x5E;
+    eth.destinationMACAddress[2] = 0xFE;
+    eth.destinationMACAddress[0] = 0xE0;
+    eth.destinationMACAddress[3] = 0x00;
+    eth.destinationMACAddress[4] = 0x00;
+    eth.destinationMACAddress[5] = 0x09;
+    embedIPv4InMac(interface, eth.sourceMACAddress);
+    eth.type = ETHERTYPE_IP;
+    ethHostToNetwork(&eth);
+    // Ethernet header in correct sending byte order
+
+    struct ipv4_header iph;
+    iph.versionAndHeaderLength = (4 << 4) | (sizeof(struct ipv4_header) / 4); // Version 4, header length in 32-bit words
+    iph.typeOfService = 0x00;
+    iph.totalLength = sizeof(struct ipv4_header) + sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
+    iph.identification = randomizeIdentification();
+    iph.flagsAndFragmentOffset = 0x4000;
+    iph.timeToLive = 64;
+    iph.protocol = IPPROTO_UDP;
+    iph.headerChecksum = 0;
+    iph.sourceIP = htonl(ipStringToHostUint32(interface));
+    iph.destinationIP = RIPMULTICASTADDRESS;
+    iph.headerChecksum = calculateChecksum(&iph, interface, debug);
+    // At this point all of the ip header is in host oreder except for the checksum, switch checksum then use function to switch all
+    iph.headerChecksum = ntohs(iph.headerChecksum);
+    ipHostToNetwork(&iph);
+    // IPv4 header now entirely in network byte order
+
+    struct rip_header header;
+    header.command = 2;
+    header.version = 2;
+    header.zero = 0;
+    RIPHeaderHostToNetwork(&header);
+    // RIP header now in network byte order
+
+    for (unsigned i = 0; i < ripEntryCount; ++i)
+    {
+        RIPHostToNetwork(&entries[i]);
+    }
+    // RIP entries now in network byte order
+    
+    size_t ripPayloadSize = sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
+    uint8_t ripPayload[ripPayloadSize];
+    memcpy(ripPayload, &header, sizeof(struct rip_header));
+    memcpy(ripPayload + sizeof(struct rip_header), entries, ripEntryCount * sizeof(struct rip_entry));
+
+    struct udp_header udp;
+    udp.sourcePort = rand(); // ATTENTION - MAY BE SOURCE OF ERROR, SHOULD JUST WRAP BUT AT 1:13 AM WHILE PEOPLE ARE YELLING OUT THE WINDOW AND THE AC ISN'T ON IN THE BUILDING, I'M TIRED.
+    udp.destinationPort = RIPPORT;
+    udp.length = sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
+    udp.checksum = 0;
+    udpHostToNetwork(&udp);
+    udp.checksum = calculateUDPChecksum(&udp, &iph, ripPayload, &ripPayloadSize, interface, debug);
+    // UDP header in network byte order
+
+    sendPacket(fd, &pcap, &eth, &iph, &header, sizeof(struct rip_header), ripPayload, &ripPayloadSize, interface, debug);
+}
+
+int embedIPv4InMac(const char* IPv4, uint8_t mac[6])
 {
     struct in_addr ipv4;
 
@@ -767,7 +852,7 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                 struct ipv4_header responseIPv4Header = createResponseIPv4Header(receivedIPHeader, receivedPayloadLength, interface, debug);
 
                 struct pcap_pkthdr responsePcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
-                sendPacket(fd, &responsePcapHeader, &responseEthernetHeader, &responseIPv4Header, &responseICMPProtocolHeader, receivedPayload, receivedPayloadLength, interface, debug);
+                sendPacket(fd, &responsePcapHeader, &responseEthernetHeader, &responseIPv4Header, &responseICMPProtocolHeader, sizeof(struct icmp_header), receivedPayload, receivedPayloadLength, interface, debug);
                 break;
             
             case IPPROTO_UDP:
@@ -806,7 +891,7 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                     responseUDPProtocolHeader = createResponseUDPHeader((struct udp_header*) receivedProtocolHeader, payload, receivedPayloadLength, &responseUDPIPv4Header, interface, debug);
 
                     struct pcap_pkthdr responseUDPProtocolPcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
-                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, payload, receivedPayloadLength, interface, debug);
+                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, sizeof(struct udp_header), payload, receivedPayloadLength, interface, debug);
                     free(payload);
                 }
                 else // udp ping
@@ -817,7 +902,7 @@ void createPacket(const int fd, struct pcap_pkthdr* receivedPcapHeader, struct e
                     
                     struct pcap_pkthdr responseUDPProtocolPcapHeader = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *receivedPayloadLength);
 
-                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, receivedPayload, receivedPayloadLength, interface, debug);
+                    sendPacket(fd, &responseUDPProtocolPcapHeader, &responseEthernetHeader, &responseUDPIPv4Header, &responseUDPProtocolHeader, sizeof(struct udp_header), receivedPayload, receivedPayloadLength, interface, debug);
                 }
                 break;
             
@@ -936,7 +1021,8 @@ struct pcap_pkthdr createResponsePcapHeader(unsigned CapLen)
     return header;
 }
 
-void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, uint8_t* payload, size_t* payloadLength, char* interface, const int debug)
+// Protocol Header length in host byte order
+void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* ethernetHeader, struct ipv4_header* ipHeader, void* protocolHeader, size_t protocolHeaderLength, uint8_t* payload, size_t* payloadLength, char* interface, const int debug)
 {
     int success = -1;
 
@@ -952,7 +1038,7 @@ void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* et
     iov[2].iov_len = sizeof(struct ipv4_header);
 
     iov[3].iov_base = protocolHeader;
-    iov[3].iov_len = sizeof(struct icmp_header);
+    iov[3].iov_len = protocolHeaderLength;
 
     iov[4].iov_base = payload;
     iov[4].iov_len = *payloadLength;

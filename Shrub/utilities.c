@@ -505,7 +505,7 @@ static uint16_t randomizeIdentification()
     return rand() % 65536;
 }
 
-void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug)
+time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug)
 {
     unsigned entryCounter = 0;
     struct rip_entry entries[25];
@@ -543,7 +543,8 @@ void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, ch
             sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
             entryCounter = 0;
         }
-    }    
+    }
+    return time(NULL); // Return current time for advertisement loop
 }
 
 void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char* interface, const int debug)
@@ -751,7 +752,7 @@ void* readPacket(void* args)
         char destination[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &iph->destinationIP, destination, INET_ADDRSTRLEN);
 
-        if (strcmp(destination, interface) == 0 || iph->destinationIP == broadcastAddress)
+        if (strcmp(destination, interface) == 0 || iph->destinationIP == broadcastAddress || iph->destinationIP == RIPMULTICASTADDRESS)
         {
             if (debug > 1)
             {

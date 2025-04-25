@@ -161,12 +161,17 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    advertiseRIP(routingTable, fileDescriptors, interfaces, networkAddresses, interfaceCount, ROUTETABLESIZE, debug);
+    time_t lastAdvertisementTime = advertiseRIP(routingTable, fileDescriptors, interfaces, networkAddresses, interfaceCount, ROUTETABLESIZE, debug);
 
     pthread_t threads[interfaceCount];
 
     while(keepRunning)
     {
+        if (difftime(time(NULL), lastAdvertisementTime) >= RIPInterval)
+        {
+            lastAdvertisementTime = advertiseRIP(routingTable, fileDescriptors, interfaces, networkAddresses, interfaceCount, ROUTETABLESIZE, debug);
+        }
+
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
             pthread_create(&threads[i], NULL, readPacket, threadArguments[i]);
@@ -186,182 +191,149 @@ int main(int argc, char *argv[])
 
 void checkOptions(const int argc, char* argv[])
 {
-    if (argc != 1) // options selected - must at least specify interface
+    if (argc < 2) // options selected - must at least specify interface
     {
-        unsigned requestedInterfaceCount = 0;
-        for (int i = 1; i < argc; ++i)
+        printUsage(argv[0]);
+        return;
+    }
+
+    unsigned requestedInterfaceCount = 0;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "-i") == 0) // define interface
         {
-            if (strcmp(argv[i], "-i") == 0) // define interface
-            {
-                if (i + 1 >= argc)
-                {
-                    printUsage(argv[0]);
-                }
-                else
-                {
-                    ++requestedInterfaceCount;
-                    ++i;
-                }
-            }
-        }
-
-        interfaces = MallocZ(requestedInterfaceCount * sizeof(char*));
-        for (unsigned i = 0; i < requestedInterfaceCount; ++i)
-        {
-            interfaces[i] = MallocZ(sizeof(char) * INET_ADDRSTRLEN);
-            interfaces[i][0] = '\0';
-        }
-
-        networkAddresses = MallocZ(requestedInterfaceCount * sizeof(char*));
-        for (unsigned i = 0; i < requestedInterfaceCount; ++i)
-        {
-            networkAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN));
-            networkAddresses[i][0] = '\0';
-        }
-
-        broadcastAddresses = MallocZ(requestedInterfaceCount * sizeof(uint32_t));
-
-        subnetLengths = MallocZ(requestedInterfaceCount * sizeof(uint8_t));
-        
-        fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
-        for (int i = 0; i < requestedInterfaceCount; ++i)
-        {
-            fileDescriptors[i] = MallocZ(sizeof(int));
-            *fileDescriptors[i] = -1; // ensure assigned of not open
-        }
-
-        routingTable = MallocZ(ROUTETABLESIZE * sizeof(struct rip_table_entry*));
-        for (unsigned i = 0; i < ROUTETABLESIZE; ++i)
-        {
-            routingTable[i] = MallocZ(sizeof(struct rip_table_entry));
-        }
-
-        interfaceCount = requestedInterfaceCount;
-        unsigned currentInterfaceIndex = 0;
-
-        for (int i = 1; i < argc; ++i)
-        {
-            if (strcmp(argv[i], "-i") == 0) // define interface
-            {
-                if (i + 1 >= argc) // Reset or no interface specified
-                {
-                    printUsage(argv[0]);
-                }
-                else
-                {
-                    for (int j = 0; j < interfaceCount; ++j)
-                    {
-                        if (interfaces[j] != NULL && strcmp(argv[i + 1], "") != 0 && strcmp(argv[i + 1], interfaces[j]) == 0)
-                        {
-                            fflush(stdout);
-                            fprintf(stderr, "Reassignment of interface: %s, exiting.", interfaces[j]);
-                            exit(66);
-                        }
-                    }
-                }
-
-                strcpy(interfaces[currentInterfaceIndex++], argv[i + 1]);
-                ++i; // Skip assigned interface
-                continue;
-            }
-            else if (strcmp(argv[i], "-d") == 0) // increment debug level
-            {
-                ++debug;
-            }
-            else if (strcmp(argv[i], "-h") == 0) // help
-            {
-                printHelp();
-            }
-            else if (strcmp(argv[i], "--default-route"))
-            {
-                if (i + 1 >= argc || interfaceCount < 2) // Reset, no interface specified, or default interface specification not allowed (host)
-                {
-                    printUsage(argv[0]);
-                }
-
-                else
-                {
-                    // Default route specification allowed
-                    if (defaultRoute == NULL)
-                    {
-                        if (i + 1 >= argc)
-                        {
-                            // Default route specified to no value
-                            printUsage(argv[0]);
-                        }
-                        defaultRoute = MallocZ(INET_ADDRSTRLEN + 1); // +1 for null termination
-                        strcpy(defaultRoute, argv[i + 1]);
-                        ++i;
-                    }
-                    else
-                    {
-                        fflush(stdout);
-                        fprintf(stderr, "Error: default route re-specified, exiting");
-                        printUsage(argv[0]);
-                    }
-                }
-            }
-            else if (strcmp(argv[i], "-r"))
-            {
-                if (i + 1 >= argc)
-                {
-                    printUsage(argv[0]);
-                }
-                else
-                {
-                    RIPInterval = atoi(argv[i + 1]);
-                    if (RIPInterval <= 0)
-                    {
-                        fflush(stdout);
-                        fprintf(stderr, "Error: invalid RIP interval - %s, exiting\n", argv[i + 1]);
-                        exit(66);
-                    }
-                    ++i;
-                }
-            }
-            else // invalid option, print usage
+            if (i + 1 >= argc)
             {
                 printUsage(argv[0]);
             }
+            else
+            {
+                ++requestedInterfaceCount;
+                ++i;
+            }
         }
     }
-    else
+
+    interfaces = MallocZ(requestedInterfaceCount * sizeof(char*));
+    for (unsigned i = 0; i < requestedInterfaceCount; ++i)
     {
-        printUsage(argv[0]);
+        interfaces[i] = MallocZ(sizeof(char) * INET_ADDRSTRLEN);
+        interfaces[i][0] = '\0';
+    }
+
+    networkAddresses = MallocZ(requestedInterfaceCount * sizeof(char*));
+    for (unsigned i = 0; i < requestedInterfaceCount; ++i)
+    {
+        networkAddresses[i] = MallocZ(sizeof(char) * (INET_ADDRSTRLEN));
+        networkAddresses[i][0] = '\0';
+    }
+
+    broadcastAddresses = MallocZ(requestedInterfaceCount * sizeof(uint32_t));
+
+    subnetLengths = MallocZ(requestedInterfaceCount * sizeof(uint8_t));
+    
+    fileDescriptors = MallocZ(requestedInterfaceCount * sizeof(int*));
+    for (int i = 0; i < requestedInterfaceCount; ++i)
+    {
+        fileDescriptors[i] = MallocZ(sizeof(int));
+        *fileDescriptors[i] = -1; // ensure assigned of not open
+    }
+
+    routingTable = MallocZ(ROUTETABLESIZE * sizeof(struct rip_table_entry*));
+    for (unsigned i = 0; i < ROUTETABLESIZE; ++i)
+    {
+        routingTable[i] = MallocZ(sizeof(struct rip_table_entry));
+    }
+
+    interfaceCount = requestedInterfaceCount;
+    unsigned currentInterfaceIndex = 0;
+
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "-i") == 0) // define interface
+        {
+            if (i + 1 >= argc)
+            {
+                printUsage(argv[0]);
+            }
+            else
+            {
+                strcpy(interfaces[currentInterfaceIndex++], argv[i + 1]);
+                ++i; // Skip the interface name
+            }
+        }
+        else if (strcmp(argv[i], "-d") == 0) // increment debug level
+        {
+            ++debug;
+        }
+        else if (strcmp(argv[i], "-h") == 0) // help
+        {
+            printHelp();
+        }
+        else if (strcmp(argv[i], "--default-route") == 0)
+        {
+            if (i + 1 >= argc || interfaceCount < 2)
+            {
+                printUsage(argv[0]);
+            }
+            else
+            {
+                if (defaultRoute == NULL)
+                {
+                    defaultRoute = MallocZ(INET_ADDRSTRLEN + 1); // +1 for null termination
+                    strcpy(defaultRoute, argv[i + 1]);
+                    ++i; // Skip the default route address
+                }
+                else
+                {
+                    fprintf(stderr, "Error: default route already specified.\n");
+                    printUsage(argv[0]);
+                }
+            }
+        }
+        else if (strcmp(argv[i], "-r") == 0) // Set RIP interval
+        {
+            if (i + 1 >= argc)
+            {
+                printUsage(argv[0]);
+            }
+            else
+            {
+                RIPInterval = atoi(argv[i + 1]);
+                if (RIPInterval <= 0)
+                {
+                    fprintf(stderr, "Error: invalid RIP interval - %s. Exiting...\n", argv[i + 1]);
+                    exit(66);
+                }
+                ++i; // Skip the RIP interval value
+            }
+        }
+        else // invalid option
+        {
+            printUsage(argv[0]);
+        }
     }
 
     if (debug > 0)
     {
-        fprintf(stdout, "debug level %u enabled\n", debug);
-        fprintf(stdout, "enabled debug options:\n");
+        fprintf(stdout, "Debug level %u enabled\n", debug);
         if (debug >= 1)
-        {
             fprintf(stdout, "\t-Routing table changes will print entire routing table\n");
-        }
         if (debug >= 2)
-        {
             fprintf(stdout, "\t-TTL expired messages enabled\n");
-        }
         if (debug >= 3)
-        {
             fprintf(stdout, "\t-UDP echo response generation status messages enabled\n");
-        }
     }
 
     if (debug > 0)
-    fprintf(stdout, "\nInterfaces:\n");
-
-    for (unsigned i = 0; i < interfaceCount; ++i)
     {
-        checkInterface(interfaces[i]);
-
-        if (debug > 0)
+        fprintf(stdout, "\nInterfaces:\n");
+        for (unsigned i = 0; i < interfaceCount; ++i)
         {
+            checkInterface(interfaces[i]);
             fprintf(stdout, "\t%s\n", interfaces[i]);
         }
-    }
-    if (debug > 0)
-    {
         fprintf(stdout, "\n");
     }
 }

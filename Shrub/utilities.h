@@ -142,7 +142,7 @@ void printRouteTable(struct rip_table_entry** routeTable, const unsigned count);
 
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
 
-void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug);
+time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug);
 
 void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char* interface, const int debug);
 

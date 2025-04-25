@@ -161,6 +161,8 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
+    advertiseRIP(routingTable, fileDescriptors, interfaces, networkAddresses, interfaceCount, ROUTETABLESIZE, debug);
+
     pthread_t threads[interfaceCount];
 
     while(keepRunning)

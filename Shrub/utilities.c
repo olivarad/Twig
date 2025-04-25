@@ -113,13 +113,13 @@ static void ipHostToNetwork(struct ipv4_header* iph)
     iph->headerChecksum = ntohs(iph->headerChecksum);
 }*/
 
-static void udpHostToNetwork(struct udp_header* udp)
+/*static void udpHostToNetwork(struct udp_header* udp)
 {
     udp->sourcePort = htons(udp->sourcePort);
     udp->destinationPort = htons(udp->destinationPort);
     udp->length = htons(udp->length);
     udp->checksum = htons(udp->checksum);
-}
+}*/
 
 /*static void udpNetworkToHost(struct udp_header* udp)
 {
@@ -610,7 +610,7 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     udp.destinationPort = RIPPORT;
     udp.length = sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
     udp.checksum = 0;
-    udpHostToNetwork(&udp);
+    //udpHostToNetwork(&udp);
     udp.checksum = calculateUDPChecksum(&udp, &iph, ripPayload, &ripPayloadSize, interface, debug);
     // UDP header in network byte order
 

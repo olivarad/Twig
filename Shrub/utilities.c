@@ -614,6 +614,11 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     sendPacket(fd, &pcap, &eth, &iph, &udp, sizeof(struct udp_header), ripPayload, &ripPayloadSize, interface, debug);
 }
 
+void receiveRIP(uint8_t* payload, size_t payloadSize)
+{
+
+}
+
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6])
 {
     struct in_addr ipv4;
@@ -804,9 +809,9 @@ void* readPacket(void* args)
                             fprintf(stdout, "interface %s, UDP checksum verified, packet accepted\n", interface);
                         }
 
-                        if (iph->destinationIP == RIPMULTICASTADDRESS)
+                        if (iph->destinationIP == RIPMULTICASTADDRESS || udpHeader->destinationPort == RIPPORT) 
                         {
-                            fprintf(stdout, "TODO - RECORD ADVERTISED RIP\n");
+                            receiveRIP(udpPayload, payloadLength);
                         }
                         else
                         {

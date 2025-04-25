@@ -146,6 +146,8 @@ time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, 
 
 void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char* interface, const int debug);
 
+void receiveRIP(uint8_t* payload, size_t payloadSize);
+
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6]);
 
 int readFileHeader(const int fd);

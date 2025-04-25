@@ -20,6 +20,7 @@ volatile sig_atomic_t keepRunning = 1;
 unsigned debug = 0;
 const unsigned ROUTETABLESIZE = 1000;
 
+unsigned activeReadThreadCount = 0;
 int** fileDescriptors = NULL;
 char** interfaces = NULL;
 char** networkAddresses = NULL;
@@ -174,12 +175,14 @@ int main(int argc, char *argv[])
 
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
+            ++activeReadThreadCount;
             pthread_create(&threads[i], NULL, readPacket, threadArguments[i]);
         }
 
         for (unsigned i = 0; i < interfaceCount; ++i)
         {
             pthread_join(threads[i], NULL);
+            --activeReadThreadCount;
         }
         nanosleep(&ts, NULL);
     }
@@ -340,6 +343,7 @@ void checkOptions(const int argc, char* argv[])
 
 void freeVariablesAndClose()
 {
+    while (activeReadThreadCount != 0); // wait until data not in use
     for (unsigned i = 0; i < interfaceCount; ++i)
     {
         if (fileDescriptors[i] != NULL)

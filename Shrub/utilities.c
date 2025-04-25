@@ -113,13 +113,13 @@ static void ipHostToNetwork(struct ipv4_header* iph)
     iph->headerChecksum = ntohs(iph->headerChecksum);
 }*/
 
-/*static void udpHostToNetwork(struct udp_header* udp)
+static void udpHostToNetwork(struct udp_header* udp)
 {
     udp->sourcePort = htons(udp->sourcePort);
     udp->destinationPort = htons(udp->destinationPort);
     udp->length = htons(udp->length);
     udp->checksum = htons(udp->checksum);
-}*/
+}
 
 /*static void udpNetworkToHost(struct udp_header* udp)
 {
@@ -550,14 +550,8 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
 {
     // ALL DATA IN HOST ORDER BEFORE SENDING, YES YOU EEPY TRANS GIRL THAT MEANS ALL, NOT JUST THE ETHERNET HEADER
 
-    struct pcap_pkthdr pcap;
-    pcap.caplen = sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
-    pcap.len = pcap.caplen;
-    time_t now = time(NULL);
-    pcap.ts_secs = (uint32_t)now;
-    pcap.ts_usecs = (uint32_t)now * 1000000;
-    // No need to convert byte order (should be relative byte order of machine already)
-    
+    struct pcap_pkthdr pcap = createResponsePcapHeader(sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry)));
+     
     struct eth_hdr eth;
     eth.destinationMACAddress[1] = 0x5E;
     eth.destinationMACAddress[2] = 0xFE;
@@ -606,12 +600,14 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     memcpy(ripPayload + sizeof(struct rip_header), entries, ripEntryCount * sizeof(struct rip_entry));
 
     struct udp_header udp;
-    udp.sourcePort = rand(); // ATTENTION - MAY BE SOURCE OF ERROR, SHOULD JUST WRAP BUT AT 1:13 AM WHILE PEOPLE ARE YELLING OUT THE WINDOW AND THE AC ISN'T ON IN THE BUILDING, I'M TIRED.
+    udp.sourcePort = rand() % 65536;
     udp.destinationPort = RIPPORT;
     udp.length = sizeof(struct udp_header) + sizeof(struct rip_header) + (ripEntryCount * sizeof(struct rip_entry));
     udp.checksum = 0;
-    //udpHostToNetwork(&udp);
+    udpHostToNetwork(&udp);
+    udp.length = ntohs(udp.length);
     udp.checksum = calculateUDPChecksum(&udp, &iph, ripPayload, &ripPayloadSize, interface, debug);
+    udp.length = htons(udp.length);
     // UDP header in network byte order
 
     sendPacket(fd, &pcap, &eth, &iph, &header, sizeof(struct rip_header), ripPayload, &ripPayloadSize, interface, debug);
@@ -1046,8 +1042,8 @@ void sendPacket(const int fd, struct pcap_pkthdr* pcapHeader, struct eth_hdr* et
     if (debug > 0)
     {
         fprintf(stdout, "interface %s, total length %u\n", interface, ipHeader->totalLength);
-        fprintf(stdout, "interface %s, size: %lu\n", interface, sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + sizeof(struct icmp_header) + *payloadLength);
-        fprintf(stdout, "interface %s, payload size: %lu\n", interface, *payloadLength);
+        //fprintf(stdout, "interface %s, size: %lu\n", interface, sizeof(struct eth_hdr) + sizeof(struct ipv4_header) + protocolHeaderLength + *payloadLength);
+        fprintf(stdout, "interface %s, payload length: %lu\n", interface, *payloadLength);
     }
 
     while (success == -1)

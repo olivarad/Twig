@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+const uint32_t RIPMULTICASTADDRESS = 0x090000E0; // THIS IS IN HOST BYTE ORDER
+const char RIPMULTICASTADDRESSSTRING[] = "224.0.0.9";
 #define RIPPORT 520
 
 typedef int32_t bpf_int32;
@@ -103,7 +105,7 @@ struct rip_entry
 	uint32_t address; // Where you advertise a route to
 	uint32_t subnetMask;
 	uint32_t nextHop;
-	uint32_t metric; // hop count (1 - 16, 16 = unreachable)
+	uint32_t metric; // hop count (0 - 16, 16 = unreachable)
 };
 
 struct rip_table_entry
@@ -142,7 +144,7 @@ void printRouteTable(struct rip_table_entry** routeTable, const unsigned count);
 
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
 
-void advertiseRIP(struct rip_table_entry** routeTable, int fd, char* receivingInterface, const unsigned maxRoutes);
+void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes);
 
 int embedIPv4InMac(const char* IPv4, uint8_t* mac);
 

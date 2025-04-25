@@ -82,6 +82,7 @@ static uint32_t ipStringToHostUint32(const char* ipString)
     return ntohl(addr.s_addr);
 }
 
+// Checksums calculated over data in network byte order
 static uint16_t calculateChecksum(const struct ipv4_header* header, char* interface, const int debug) 
 {
     uint32_t checksum = 0;
@@ -149,6 +150,7 @@ static int verifyChecksum(const struct ipv4_header* header, char* interface, con
     return (computed_checksum == original_checksum);
 }
 
+// Checksums calculated over data in network byte order
 static uint16_t calculateUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, const uint8_t* payload, size_t* payload_length, char* interface, const int debug) 
 {
 
@@ -209,6 +211,7 @@ static int verifyUDPChecksum(struct udp_header* udp, struct ipv4_header* ip, con
     return calculateUDPChecksum(udp, ip, payload, payload_length, interface, debug) == 0;
 }
 
+// Checksums calculated over data in network byte order
 static uint16_t calculateICMPChecksum(struct icmp_header* icmp, const uint8_t* payload, size_t* payload_length, char* interface, const int debug) 
 {
     uint32_t checksum = 0;
@@ -380,6 +383,36 @@ void printRouteTable(struct rip_table_entry** routeTable, const unsigned count)
     }
 }
 
+static void copyRIPEntry(struct rip_entry* dest, const struct rip_entry* source)
+{
+    dest->addressFamilyIdentifier = source->addressFamilyIdentifier;
+    dest->routeTag = source->routeTag;
+    dest->address = source->address;
+    dest->subnetMask = source->subnetMask;
+    dest->nextHop = source->nextHop;
+    dest->metric = source->metric;
+}
+
+static void RIPHostToNetwork(struct rip_entry* entry)
+{
+    entry->addressFamilyIdentifier = htons(entry->addressFamilyIdentifier);
+    entry->routeTag = htons(entry->routeTag);
+    entry->address = htonl(entry->address);
+    entry->subnetMask = htonl(entry->subnetMask);
+    entry->nextHop = htonl(entry->nextHop);
+    entry->metric = htonl(entry->metric);
+}
+
+static void RIPNetworkToHost(struct rip_entry* entry)
+{
+    entry->addressFamilyIdentifier = ntohs(entry->addressFamilyIdentifier);
+    entry->routeTag = ntohs(entry->routeTag);
+    entry->address = ntohl(entry->address);
+    entry->subnetMask = ntohl(entry->subnetMask);
+    entry->nextHop = ntohl(entry->nextHop);
+    entry->metric = ntohl(entry->metric);
+}
+
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug)
 {
     for (unsigned i = 0; i < routeCount; ++i)
@@ -409,20 +442,95 @@ void createDefaultRouteTable(struct rip_table_entry** routeTable, char** network
     }
 }
 
-/*void advertiseRIP(struct rip_table_entry** routeTable, int fd, char* receivingInterface, const unsigned maxRoutes)
+// Returns a random number for identification in host byte order (not that it matters nearly as much since its random)
+static uint16_t randomizeIdentification()
 {
+    return rand() % 65536;
+}
+
+void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes)
+{
+    // ALL DATA IN HOST ORDER BEFORE SENDING, YES YOU EEPY TRANS GIRL THAT MEANS ALL, NOT JUST THE ETHERNET HEADER
+
+    // Assume there's data to send - if there isn't, this just won't be used (BIG WOOP)
+    struct pcap_pkthdr pcap;
+    // TODO - PCAP HEADER RELIANT ON OTHER PACKET ITEMS
+    //pcap.caplen = SOMETHING;
+    //pcap.len = pcap.caplen;
+    time_t now = time(NULL);
+    pcap.ts_secs = (uint32_t)now;
+    pcap.ts_usecs = (uint32_t)now * 1000000;
+
+    struct eth_hdr eth;
+    eth.destinationMACAddress[1] = 0x5E;
+    eth.destinationMACAddress[2] = 0xFE;
+    eth.destinationMACAddress[0] = 0xE0;
+    eth.destinationMACAddress[3] = 0x00;
+    eth.destinationMACAddress[4] = 0x00;
+    eth.destinationMACAddress[5] = 0x09;
+    // TODO - ASSIGN SOURCE WHEN SENDING
+    //embedIPv4InMac(, &eth.sourceMACAddress);
+    eth.type = ETHERTYPE_IP;
+
+    struct ipv4_header iph;
+    iph.versionAndHeaderLength = (4 << 4) | (sizeof(struct ipv4_header) / 4); // Version 4, header length in 32-bit words
+    iph.typeOfService = 0x00;
+    iph.totalLength = sizeof(struct ipv4_header); // TODO add entryCount * sizeof(struct rip_entry)
+    iph.identification = randomizeIdentification(); // TODO, do this after every send for set up for next
+    iph.flagsAndFragmentOffset = 0x4000;
+    iph.timeToLive = 64;
+    iph.protocol = IPPROTO_UDP;
+    iph.headerChecksum = 0; // TODO - DON'T FORGET TO OBTAIN PAYOAD AND SWITCH TO NETWORK BYTE ORDER BEFORE CALCULATING
+    // TODO - ASSIGN SOURCE WHEN SENDING
+    //iph.sourceIP = SOMETHING;
+    iph.destinationIP = RIPMULTICASTADDRESS;
+
+    struct udp_header udp;
+    udp.sourcePort = rand(); // ATTENTION - MAY BE SOURCE OF ERROR, SHOULD JUST WRAP BUT AT 1:13 AM WHILE PEOPLE ARE YELLING OUT THE WINDOW AND THE AC ISN'T ON IN THE BUILDING, I'M TIRED.
+    udp.destinationPort = RIPPORT;
+    // TODO assign length after finding payload
+    // TODO assign checksum which is payload depended
+
     struct rip_header header;
     header.command = 2;
     header.version = 2;
     header.zero = 0;
 
-    struct rip_enty* entries[25];
+    unsigned entryCounter = 0;
+    struct rip_entry entries[25];
 
-    for (unsigned i = 0; i < maxRoutes; ++i)
+    for (unsigned i = 0; i < interfaceCount; ++i) // Loop through networks to multicast on
     {
-        //if ()
-    }
-}*/
+        uint32_t networkAddress = ipStringToHostUint32(networkAddresses[i]);
+        for (unsigned j = 0; j < interfaceCount; ++j) // Loop throuch route table (Hi Silas)
+        {
+            if (routeTable[j]->entry.address != 0)
+            {
+                if (networkAddress != routeTable[j]->entry.address) // Only advertise useful information
+                {
+                    // Copy over usefule data but modify next hop and metric
+                    // ALL DATA IN HOST ORDER (NOT READY FOR SENDING)
+                    copyRIPEntry(&entries[entryCounter], &routeTable[j]->entry);
+                    entries[entryCounter].nextHop = ipStringToHostUint32(interfaces[i]);
+                    entries[entryCounter].metric += 1;  
+                    entryCounter++;
+                    if (entryCounter == 24) // TODO SEND THEN RESET (MAX ENTRY COUNT REACHED)
+                    {
+
+                    }
+                }
+            }
+            else // With good management, no more entries (don't forget to not be silly and not manage it on update)
+            {
+                break;
+            }
+        }
+        if (entryCounter != 0) // Entry indecies [0, entryCoutner) to send
+        {
+
+        }
+    }    
+}
 
 int embedIPv4InMac(const char* IPv4, uint8_t* mac)
 {

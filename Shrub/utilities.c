@@ -90,10 +90,10 @@ static void ethHostToNetwork(struct eth_hdr* eth)
     eth->type = htons(eth->type);
 }
 
-static void ethNetworkToHost(struct eth_hdr* eth)
+/*static void ethNetworkToHost(struct eth_hdr* eth)
 {
     eth->type = ntohs(eth->type);
-}
+}*/
 
 // Not touching ip addresses because they should always be in network byte order (may be issue since i often convert so other systems may rely on it)
 static void ipHostToNetwork(struct ipv4_header* iph)
@@ -105,13 +105,13 @@ static void ipHostToNetwork(struct ipv4_header* iph)
 }
 
 // Not touching ip addresses because they should always be in network byte order (may be issue since i often convert so other systems may rely on it)
-static void ipNetworkToHost(struct ipv4_header* iph)
+/*static void ipNetworkToHost(struct ipv4_header* iph)
 {
     iph->totalLength = ntohs(iph->totalLength);
     iph->identification = ntohs(iph->identification);
     iph->flagsAndFragmentOffset = ntohs(iph->flagsAndFragmentOffset);
     iph->headerChecksum = ntohs(iph->headerChecksum);
-}
+}*/
 
 static void udpHostToNetwork(struct udp_header* udp)
 {
@@ -121,13 +121,13 @@ static void udpHostToNetwork(struct udp_header* udp)
     udp->checksum = htons(udp->checksum);
 }
 
-static void udpNetworkToHost(struct udp_header* udp)
+/*static void udpNetworkToHost(struct udp_header* udp)
 {
     udp->sourcePort = ntohs(udp->sourcePort);
     udp->destinationPort = ntohs(udp->destinationPort);
     udp->length = ntohs(udp->length);
     udp->checksum = ntohs(udp->checksum);
-}
+}*/
 
 // Checksums calculated over data in host byte order, but returns network byte order checksum
 static uint16_t calculateChecksum(const struct ipv4_header* header, char* interface, const int debug) 
@@ -445,10 +445,10 @@ static void RIPHeaderHostToNetwork(struct rip_header* header)
     header->zero = htons(header->zero); // Reserved so should be zero, but just in case
 }
 
-static void RIPHeaderNetworkToHost(struct rip_header* header)
+/*static void RIPHeaderNetworkToHost(struct rip_header* header)
 {
     header->zero = ntohs(header->zero); // Reserved so should be zero, but just in case
-}
+}*/
 
 static void RIPHostToNetwork(struct rip_entry* entry)
 {
@@ -460,7 +460,7 @@ static void RIPHostToNetwork(struct rip_entry* entry)
     entry->metric = htonl(entry->metric);
 }
 
-static void RIPNetworkToHost(struct rip_entry* entry)
+/*static void RIPNetworkToHost(struct rip_entry* entry)
 {
     entry->addressFamilyIdentifier = ntohs(entry->addressFamilyIdentifier);
     entry->routeTag = ntohs(entry->routeTag);
@@ -468,7 +468,7 @@ static void RIPNetworkToHost(struct rip_entry* entry)
     entry->subnetMask = ntohl(entry->subnetMask);
     entry->nextHop = ntohl(entry->nextHop);
     entry->metric = ntohl(entry->metric);
-}
+}*/
 
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug)
 {

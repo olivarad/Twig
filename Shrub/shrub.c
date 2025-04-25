@@ -249,7 +249,7 @@ void checkOptions(const int argc, char* argv[])
                 {
                     for (int j = 0; j < interfaceCount; ++j)
                     {
-                        if (interfaces[j] != NULL && strcmp(argv[i + 1], interfaces[j]) == 0)
+                        if (interfaces[j] != NULL && interfaces[j][0] != '\0' && strcmp(argv[i + 1], interfaces[j]) == 0)
                         {
                             fflush(stdout);
                             fprintf(stderr, "Reassignment of interface: %s, exiting.", interfaces[j]);

@@ -576,7 +576,7 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     iph.headerChecksum = 0;
     iph.sourceIP = htonl(ipStringToHostUint32(interface));
     iph.destinationIP = RIPMULTICASTADDRESS;
-    iph.headerChecksum = calculateChecksum(&iph, interface, debug);
+    //iph.headerChecksum = calculateChecksum(&iph, interface, debug);
     // At this point all of the ip header is in host oreder except for the checksum, switch checksum then use function to switch all
     iph.headerChecksum = ntohs(iph.headerChecksum);
     ipHostToNetwork(&iph);
@@ -607,7 +607,7 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     udp.checksum = 0;
     udpHostToNetwork(&udp);
     udp.length = ntohs(udp.length);
-    udp.checksum = calculateUDPChecksum(&udp, &iph, ripPayload, &ripPayloadSize, interface, debug);
+    //udp.checksum = calculateUDPChecksum(&udp, &iph, ripPayload, &ripPayloadSize, interface, debug);
     udp.length = htons(udp.length);
     // UDP header in network byte order
 
@@ -797,13 +797,21 @@ void* readPacket(void* args)
                     struct udp_header* udpHeader = (struct udp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
                     uint8_t* udpPayload = (uint8_t*)(udpHeader + 1);
 
-                    if (verifyUDPChecksum(udpHeader, iph, udpPayload, &payloadLength, interface, debug))
+                    if (udpHeader->checksum == 0 || verifyUDPChecksum(udpHeader, iph, udpPayload, &payloadLength, interface, debug))
                     {
                         if (debug > 0)
                         {
                             fprintf(stdout, "interface %s, UDP checksum verified, packet accepted\n", interface);
                         }
-                        createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, mac, interface, debug);
+
+                        if (iph->destinationIP == RIPMULTICASTADDRESS)
+                        {
+                            fprintf(stdout, "TODO - RECORD ADVERTISED RIP\n");
+                        }
+                        else
+                        {
+                            createPacket(fd, &pktHeader, eth, iph, udpHeader, udpPayload, &payloadLength, payload, maximumPayloadSize, mac, interface, debug);
+                        }
                     }
                     else
                     {

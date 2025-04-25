@@ -534,14 +534,14 @@ void advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, ch
             }
             else // With good management, no more entries left in table (don't forget to not be silly and not manage it on update)
             {
-                // Advertise any un-advertised entries and rest for next interface
-                if (entryCounter != 0)
-                {
-                    sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
-                    entryCounter = 0;
-                }
                 break;
             }
+        }
+        // Advertise any un-advertised entries and rest for next interface
+        if (entryCounter != 0)
+        {
+            sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
+            entryCounter = 0;
         }
     }    
 }

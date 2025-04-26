@@ -136,6 +136,8 @@ void printHelp();
 
 void checkInterface(char* interface);
 
+uint32_t calculateNetworkAddress(uint32_t ip, uint8_t prefixLength);
+
 char** calculateNetworkBroadcastAndSubnetLength(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, uint8_t* subnetLengths, const unsigned count, const int debug);
 
 void trimInterfaces(char** interfaces, const unsigned count, int debug);
@@ -153,6 +155,9 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
 void receiveRIP(uint8_t* payload, size_t payloadSize, struct eth_hdr eth, struct rip_table_entry** routingTable, uint8_t* myMACAddress, unsigned routeTableSize, int debug);
 
 void handleRIPEntry(struct rip_entry entry, struct eth_hdr eth, struct rip_table_entry** routingTable, uint8_t* myMACAddress, unsigned routeTableSize, int debug);
+
+// Attempt to find next hop for packet
+uint32_t searchRouteTable(struct rip_table_entry** routingTable, unsigned routeTableSize, uint32_t target);
 
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6]);
 

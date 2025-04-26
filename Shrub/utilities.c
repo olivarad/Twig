@@ -332,6 +332,12 @@ static uint32_t calculateBroadcastAddress(uint32_t netAddress, char* ipStr, uint
     return broadcastAddress;
 }
 
+uint32_t calculateNetworkAddress(uint32_t ip, uint8_t prefixLength)
+{
+    uint32_t mask = prefixLength == 0 ? 0 : 0xFFFFFFFF << (32 - prefixLength);
+    return ip & htonl(mask);
+}
+
 char** calculateNetworkBroadcastAndSubnetLength(char** addresses, char** networkAddresses, uint32_t* broadcastAddresses, uint8_t* subnetLengths, const unsigned count, const int debug)
 {
 
@@ -513,6 +519,8 @@ static uint16_t randomizeIdentification()
 
 time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug)
 {
+    pthread_mutex_lock(&routingTableMutex);
+
     unsigned entryCounter = 0;
     struct rip_entry entries[25];
 
@@ -533,7 +541,9 @@ time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, 
                     entryCounter++;
                     if (entryCounter == 25) // 25 entries, send then prep for more
                     {
+                        pthread_mutex_unlock(&routingTableMutex);
                         sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
+                        pthread_mutex_lock(&routingTableMutex);
                         entryCounter = 0;
                     }
                 }
@@ -546,10 +556,15 @@ time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, 
         // Advertise any un-advertised entries and rest for next interface
         if (entryCounter != 0)
         {
+            pthread_mutex_unlock(&routingTableMutex);
             sendRIP(entries, entryCounter, *fileDescriptors[i], interfaces[i], debug);
+            pthread_mutex_lock(&routingTableMutex);
             entryCounter = 0;
         }
     }
+
+    pthread_mutex_unlock(&routingTableMutex);
+
     return time(NULL); // Return current time for advertisement loop
 }
 
@@ -747,6 +762,47 @@ void handleRIPEntry(struct rip_entry entry, struct eth_hdr eth, struct rip_table
     {
         printRouteTable(routingTable, routeTableSize);
     }
+}
+
+static uint32_t createSubnetMask(uint32_t prefixLength)
+{
+    if (prefixLength == 0)
+        return 0;
+    return htonl(0xFFFFFFFF << (32 - prefixLength));
+}
+
+uint32_t searchRouteTable(struct rip_table_entry** routingTable, unsigned routeTableSize, uint32_t target)
+{
+    uint32_t retval = 0; // 0 = not found
+
+    pthread_mutex_lock(&routingTableMutex);
+
+    for (unsigned i = 0; i < routeTableSize; ++i)
+    {
+        if (routingTable[i]->entry.address != 0)
+        {
+            uint32_t networkAddress = target & createSubnetMask(routingTable[i]->entry.subnetMask);
+            char net[INET_ADDRSTRLEN];
+            char stored[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &networkAddress, net, INET_ADDRSTRLEN);
+            uint32_t temp = htonl(routingTable[i]->entry.address);
+            inet_ntop(AF_INET, &temp, stored, INET_ADDRSTRLEN);
+
+            if (strcmp(net, stored) == 0)
+            {
+                retval = routingTable[i]->entry.nextHop;
+                break;
+            }
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&routingTableMutex);
+
+    return retval;
 }
 
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6])
@@ -966,6 +1022,46 @@ void* readPacket(void* args)
                         fprintf(stdout, "interface %s, IP protocol: Unknown (%d)\n", interface, iph->protocol);
                     }
                     break;
+            }
+        }
+        else // check routing table for forwarding
+        {
+            uint32_t nextHopIP = searchRouteTable(routingTable, routeTableSize, iph->destinationIP);
+            if (nextHopIP != 0)
+            {
+                char nextHopString[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &nextHopIP, nextHopString, INET_ADDRSTRLEN);
+                if (--iph->timeToLive > 0) // Forward packet
+                {
+                    struct pcap_pkthdr pcap = createResponsePcapHeader(pktHeader.caplen);
+                    embedIPv4InMac(nextHopString, eth->destinationMACAddress);
+                    memcpy(eth->sourceMACAddress, mac, 6);
+                    iph->headerChecksum = 0; // Dont have time to fiddle with my code
+                    fprintf(stdout, "FORWARDING\n");
+                    switch (iph->protocol)
+                    {
+                        case IPPROTO_ICMP:
+                            struct icmp_header* icmpHeader = (struct icmp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                            uint16_t headerLength = (iph->versionAndHeaderLength & 0X0F) * 4;
+                            size_t payloadLength = ntohs(iph->totalLength) - headerLength - sizeof(struct icmp_header);
+                            uint8_t* icmp_payload = (uint8_t*)(icmpHeader + 1); // Payload starts after the ICMP header
+                            sendPacket(fd, &pcap, eth, iph, icmpHeader, sizeof(struct icmp_header), icmp_payload, &payloadLength, interface, debug);
+                            break;
+                        case IPPROTO_UDP:
+                            struct udp_header* udpHeader = (struct udp_header*)(packetBuffer + sizeof(struct eth_hdr) + ((iph->versionAndHeaderLength & 0X0F) * 4));
+                            uint8_t* udpPayload = (uint8_t*)(udpHeader + 1);
+                            uint16_t udpheaderLength = (iph->versionAndHeaderLength & 0X0F) * 4;
+                            payloadLength = ntohs(iph->totalLength) - udpheaderLength - sizeof(struct udp_header);
+                            sendPacket(fd, &pcap, eth, iph, udpHeader, sizeof(struct udp_header), udpPayload, &payloadLength, interface, debug);
+                            break;
+                        default:
+                            if (debug > 0)
+                            {
+                                fprintf(stdout, "interface %s, IP protocol: Unknown (%d)\n", interface, iph->protocol);
+                            }
+                            break;
+                    }
+                }
             }
         }
     }

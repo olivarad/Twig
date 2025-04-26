@@ -100,6 +100,8 @@ int main(int argc, char *argv[])
         threadArguments[i]->interface = interfaces[i];
         threadArguments[i]->interfaces = interfaces;
         threadArguments[i]->broadcastAddress = broadcastAddresses[i];
+        threadArguments[i]->routingTable = routingTable;
+        threadArguments[i]->routeTableSize = ROUTETABLESIZE;
         
         if (embedIPv4InMac(threadArguments[i]->interface, threadArguments[i]->mac) != 1)
         {

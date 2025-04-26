@@ -11,8 +11,10 @@
 #include <net/ethernet.h> 
 #include <string.h>
 #include <stdint.h> 
+#include <pthread.h>
 #include <sys/uio.h>
 
+pthread_mutex_t routingTableMutex = PTHREAD_MUTEX_INITIALIZER;
 #define EPOCH_DIFF 2208988800UL
 #define RIPMULTICASTADDRESS  0xE0000009 // THIS IS IN NETWORK BYTE ORDER
 #define RIPMULTICASTADDRESSSTRING "224.0.0.9";
@@ -411,6 +413,8 @@ static void ipStringFromUint32(char* buffer, uint32_t ipHostOrder)
 
 void printRouteTable(struct rip_table_entry** routeTable, const unsigned count)
 {
+    pthread_mutex_lock(&routingTableMutex);
+
     char ipString[INET_ADDRSTRLEN];
     char nextHopString[INET_ADDRSTRLEN];
     for (unsigned i = 0; i < count; ++i)
@@ -428,9 +432,11 @@ void printRouteTable(struct rip_table_entry** routeTable, const unsigned count)
             printf("%02X:%02X:%02X:%02X:%02X:%02X\n", routeTable[i]->advertiserMACAddress[0], routeTable[i]->advertiserMACAddress[1], routeTable[i]->advertiserMACAddress[2], routeTable[i]->advertiserMACAddress[3], routeTable[i]->advertiserMACAddress[4], routeTable[i]->advertiserMACAddress[5]);
         }
     }
+
+    pthread_mutex_unlock(&routingTableMutex);
 }
 
-static void copyRIPEntry(struct rip_entry* dest, const struct rip_entry* source)
+void copyRIPEntry(struct rip_entry* dest, const struct rip_entry* source)
 {
     dest->addressFamilyIdentifier = source->addressFamilyIdentifier;
     dest->routeTag = source->routeTag;
@@ -445,10 +451,10 @@ static void RIPHeaderHostToNetwork(struct rip_header* header)
     header->zero = htons(header->zero); // Reserved so should be zero, but just in case
 }
 
-/*static void RIPHeaderNetworkToHost(struct rip_header* header)
+static void RIPHeaderNetworkToHost(struct rip_header* header)
 {
     header->zero = ntohs(header->zero); // Reserved so should be zero, but just in case
-}*/
+}
 
 static void RIPHostToNetwork(struct rip_entry* entry)
 {
@@ -460,7 +466,7 @@ static void RIPHostToNetwork(struct rip_entry* entry)
     entry->metric = htonl(entry->metric);
 }
 
-/*static void RIPNetworkToHost(struct rip_entry* entry)
+static void RIPNetworkToHost(struct rip_entry* entry)
 {
     entry->addressFamilyIdentifier = ntohs(entry->addressFamilyIdentifier);
     entry->routeTag = ntohs(entry->routeTag);
@@ -468,7 +474,7 @@ static void RIPHostToNetwork(struct rip_entry* entry)
     entry->subnetMask = ntohl(entry->subnetMask);
     entry->nextHop = ntohl(entry->nextHop);
     entry->metric = ntohl(entry->metric);
-}*/
+}
 
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug)
 {
@@ -614,9 +620,133 @@ void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char*
     sendPacket(fd, &pcap, &eth, &iph, &udp, sizeof(struct udp_header), ripPayload, &ripPayloadSize, interface, debug);
 }
 
-void receiveRIP(uint8_t* payload, size_t payloadSize)
+void receiveRIP(uint8_t* payload, size_t payloadSize, struct eth_hdr eth, struct rip_table_entry** routingTable, uint8_t* myMACAddress, unsigned routeTableSize, int debug)
 {
+    // Make sure there's enough data for the header
+    if (payloadSize < sizeof(struct rip_header)) {
+        fprintf(stderr, "Payload too small for RIP header\n");
+        return;
+    }
 
+    struct rip_header header;
+    header.command = payload[0];
+    header.version = payload[1];
+    memcpy(&header.zero, payload + 2, sizeof(uint16_t));
+    RIPHeaderNetworkToHost(&header); // convert endianess
+
+    size_t offset = sizeof(struct rip_header);
+    size_t entrySize = sizeof(struct rip_entry);
+
+    // Make sure payload has room for an integer number of entries
+    if ((payloadSize - offset) % entrySize != 0) {
+        fprintf(stderr, "Payload size not aligned with RIP entries\n");
+        return;
+    }
+
+    size_t numEntries = (payloadSize - offset) / entrySize;
+
+    for (size_t i = 0; i < numEntries; ++i) {
+        size_t entryOffset = offset + i * entrySize;
+
+        // Double-check that we're not reading beyond the buffer
+        if (entryOffset + entrySize > payloadSize) {
+            fprintf(stderr, "Not enough data for RIP entry %zu\n", i);
+            break;
+        }
+
+        struct rip_entry entry;
+        uint8_t* entryData = payload + entryOffset;
+
+        entry.addressFamilyIdentifier = *(uint16_t*)(entryData + 0);
+        entry.routeTag = *(uint16_t*)(entryData + 2);
+        entry.address = *(uint32_t*)(entryData + 4);
+        entry.subnetMask = *(uint32_t*)(entryData + 8);
+        entry.nextHop = *(uint32_t*)(entryData + 12);
+        entry.metric = *(uint32_t*)(entryData + 16);
+
+        RIPNetworkToHost(&entry); // convert endianess
+        handleRIPEntry(entry, eth, routingTable, myMACAddress, routeTableSize, debug);
+    }
+}
+
+void handleRIPEntry(struct rip_entry entry, struct eth_hdr eth, struct rip_table_entry** routingTable, uint8_t* myMACAddress, unsigned routeTableSize, int debug)
+{
+    int routingTableChanged = 0;
+
+    pthread_mutex_lock(&routingTableMutex);
+
+    for (unsigned i = 0; i < routeTableSize; ++i)
+    {
+        if (routingTable[i]->entry.address != 0)
+        {
+            if (entry.address == routingTable[i]->entry.address && entry.subnetMask == routingTable[i]->entry.subnetMask) // Check for route to update
+            {
+                if (entry.metric == 16) // delete entry and move elements down
+                {
+                    int swappedWithEmpty = 0;
+                    for (unsigned j = i; j < routeTableSize; j++)
+                    {
+                        if (routingTable[j]->entry.address == 0)
+                        {
+                            struct rip_table_entry* temp = routingTable[i];
+                            routingTable[i] = routingTable[j];
+                            routingTable[j] = temp;
+                            temp->entry.addressFamilyIdentifier = 2; // IP
+                            temp->entry.routeTag = 0;
+                            temp->entry.address = 0;
+                            temp->entry.subnetMask = 0;
+                            temp->entry.nextHop = 0;
+                            temp->entry.metric = 16;
+                            for (unsigned k = 0; k < 6; ++k)
+                            {
+                                temp->advertiserMACAddress[k] = 0;
+                            }
+                            swappedWithEmpty = 1;
+                        }
+                    }
+                    if (swappedWithEmpty != 1)
+                    {
+                        struct rip_table_entry* temp = routingTable[i];
+                        routingTable[i] = routingTable[routeTableSize - 1];
+                        routingTable[routeTableSize - 1] = temp;
+                        temp->entry.addressFamilyIdentifier = 2; // IP
+                        temp->entry.routeTag = 0;
+                        temp->entry.address = 0;
+                        temp->entry.subnetMask = 0;
+                        temp->entry.nextHop = 0;
+                        temp->entry.metric = 16;
+                        for (unsigned j = 0; j < 6; ++j)
+                        {
+                            temp->advertiserMACAddress[j] = 0;
+                        }
+                    }
+                    routingTableChanged = 1;
+                }
+                else if (entry.metric < routingTable[i]->entry.metric)
+                {
+                    copyRIPEntry(&routingTable[i]->entry, &entry);
+                    memcpy(routingTable[i]->advertiserMACAddress, eth.sourceMACAddress, 6);
+                    routingTableChanged = 1;
+                }
+                break;
+            }
+        }
+        else
+        {
+            // No updatable route found, add new one
+            copyRIPEntry(&routingTable[i]->entry, &entry);
+            memcpy(routingTable[i]->advertiserMACAddress, eth.sourceMACAddress, 6);
+            routingTableChanged = 1;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&routingTableMutex);
+
+    if (routingTableChanged == 1 && debug >= 1)
+    {
+        printRouteTable(routingTable, routeTableSize);
+    }
 }
 
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6])
@@ -674,6 +804,8 @@ void* readPacket(void* args)
     size_t* maximumPayloadSize = arguments->maximumPayloadSize;
     char* packetBuffer = arguments->packetBuffer;
     uint8_t* payload = arguments->payload;
+    struct rip_table_entry** routingTable = arguments->routingTable;
+    unsigned routeTableSize = arguments->routeTableSize;
 
     struct pcap_pkthdr pktHeader;
     int bytesRead = read(fd, &pktHeader, sizeof(pktHeader));
@@ -811,7 +943,9 @@ void* readPacket(void* args)
 
                         if (iph->destinationIP == RIPMULTICASTADDRESS || udpHeader->destinationPort == RIPPORT) 
                         {
-                            receiveRIP(udpPayload, payloadLength);
+                            uint16_t headerLength = (iph->versionAndHeaderLength & 0X0F) * 4;
+                            payloadLength = ntohs(iph->totalLength) - headerLength - sizeof(struct udp_header);
+                            receiveRIP(udpPayload, payloadLength, *eth, routingTable, mac, routeTableSize, debug);
                         }
                         else
                         {

@@ -109,7 +109,7 @@ struct rip_entry
 struct rip_table_entry
 {
 	struct rip_entry entry;
-	u_int8_t advertiserMACAddress[6]; // who gave you the info+
+	u_int8_t advertiserMACAddress[6]; // who gave you the info
 };
 
 struct readPacketArguments
@@ -126,6 +126,8 @@ struct readPacketArguments
 	size_t* maximumPayloadSize;
 	char* packetBuffer;
 	uint8_t* payload;
+	struct rip_table_entry** routingTable;
+	unsigned routeTableSize;
 };
 
 void printUsage(const char* program);
@@ -140,13 +142,17 @@ void trimInterfaces(char** interfaces, const unsigned count, int debug);
 
 void printRouteTable(struct rip_table_entry** routeTable, const unsigned count);
 
+void copyRIPEntry(struct rip_entry* dest, const struct rip_entry* source);
+
 void createDefaultRouteTable(struct rip_table_entry** routeTable, char** networkAddresses, char** interfaces, uint8_t* subnetLengths, const unsigned interfaceCount, const unsigned routeCount, const int debug);
 
 time_t advertiseRIP(struct rip_table_entry** routeTable, int** fileDescriptors, char** interfaces, char** networkAddresses, const unsigned interfaceCount, const unsigned maxRoutes, const int debug);
 
 void sendRIP(struct rip_entry entries[25], unsigned ripEntryCount, int fd, char* interface, const int debug);
 
-void receiveRIP(uint8_t* payload, size_t payloadSize);
+void receiveRIP(uint8_t* payload, size_t payloadSize, struct eth_hdr eth, struct rip_table_entry** routingTable, uint8_t* myMACAddress, unsigned routeTableSize, int debug);
+
+void handleRIPEntry(struct rip_entry entry, struct eth_hdr eth, struct rip_table_entry** routingTable, uint8_t* myMACAddress, unsigned routeTableSize, int debug);
 
 int embedIPv4InMac(const char* IPv4, uint8_t mac[6]);
 
